@@ -34,6 +34,24 @@ def register_callbacks(app):
         return items or "No files selected yet."
 
     @app.callback(
+        Output("finetune-upload-summary", "children"),
+        Input("finetune-data-upload", "contents"),
+        Input("finetune-mask-upload", "contents"),
+        State("finetune-data-upload", "filename"),
+        State("finetune-mask-upload", "filename"),
+    )
+    def summarize_finetune_uploads(image_contents, mask_contents, image_names, mask_names):
+        items = []
+        for contents, names in ((image_contents, image_names), (mask_contents, mask_names)):
+            if not contents:
+                continue
+            if isinstance(contents, str):
+                contents, names = [contents], [names]
+            names = names or [None] * len(contents)
+            items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
+        return items or "No files selected yet."
+
+    @app.callback(
         Output("inference-file-summary", "children"),
         Output("lr-preview", "children"),
         Output("lr-preview", "className"),
