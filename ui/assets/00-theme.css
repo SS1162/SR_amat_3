@@ -1,0 +1,49 @@
+:root {
+    --bg: #07111f;
+    --bg-2: #0b1627;
+    --panel: rgba(14, 29, 49, 0.86);
+    --panel-strong: #101f34;
+    --border: rgba(151, 177, 209, 0.16);
+    --border-strong: rgba(117, 222, 255, 0.28);
+    --text: #ecf4ff;
+    --muted: #8ea3bd;
+    --soft: #c7d4e5;
+    --cyan: #54d7ff;
+    --cyan-2: #1eb8e8;
+    --violet: #a886ff;
+    --green: #66e2b0;
+    --amber: #ffca75;
+    --danger: #ff718b;
+    --shadow: 0 20px 55px rgba(0, 0, 0, 0.22);
+    --radius: 22px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #react-entry-point, #_dash-app-content {
+    min-height: 100%;
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    background:
+        radial-gradient(circle at 10% 8%, rgba(84, 215, 255, 0.10), transparent 26%),
+        radial-gradient(circle at 88% 4%, rgba(168, 134, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #07111f 0%, #08131f 55%, #060d18 100%);
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .23;
+    background-image:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+}

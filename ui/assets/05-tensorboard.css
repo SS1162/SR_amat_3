@@ -1,0 +1,26 @@
+.tensor-card .card-body { padding: 20px; }
+
+.tensor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 5px 3px 18px;
+}
+
+.tensor-placeholder {
+    min-height: 520px;
+    border-radius: 18px;
+    border: 1px dashed rgba(84,215,255,.22);
+    background: rgba(3,10,18,.45);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 30px;
+}
+.tensor-placeholder h4 { margin: 8px 0 5px; }
+.tensor-placeholder p { color: var(--muted); max-width: 560px; }
+.tensor-placeholder code { margin-top: 12px; color: #b9c9dc; background: rgba(255,255,255,.04); padding: 9px 12px; border-radius: 9px; }
+.tensor-icon { color: var(--cyan); font-size: 44px; }
