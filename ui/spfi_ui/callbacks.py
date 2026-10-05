@@ -79,14 +79,24 @@ def register_callbacks(app):
         Output("train-status", "children"),
         Output("train-status", "className"),
         Output("train-status-copy", "children"),
+        Output("stop-training", "className"),
+        Output("resume-training", "className"),
+        Output("fake-train-timer", "n_intervals"),
         Input("start-training", "n_clicks"),
         Input("stop-training", "n_clicks"),
+        Input("resume-training", "n_clicks"),
         prevent_initial_call=True,
     )
-    def toggle_training(start_clicks, stop_clicks):
+    def toggle_training(start_clicks, stop_clicks, resume_clicks):
+        running_buttons = ("danger-action", "resume-action d-none")
         if ctx.triggered_id == "start-training":
-            return False, True, False, "Running", "status-pill status-success", "Training UI demo in progress"
-        return True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user"
+            return (False, True, False, "Running", "status-pill status-success", "Training UI demo in progress",
+                    *running_buttons, 0)
+        if ctx.triggered_id == "resume-training":
+            return (False, True, False, "Running", "status-pill status-success", "Training resumed from where it stopped",
+                    *running_buttons, no_update)
+        return (True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user",
+                "danger-action d-none", "resume-action", no_update)
 
     @app.callback(
         Output("train-progress", "value"),
