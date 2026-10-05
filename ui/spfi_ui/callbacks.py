@@ -34,6 +34,24 @@ def register_callbacks(app):
         return items or "No files selected yet."
 
     @app.callback(
+        Output("finetune-upload-summary", "children"),
+        Input("finetune-data-upload", "contents"),
+        Input("finetune-mask-upload", "contents"),
+        State("finetune-data-upload", "filename"),
+        State("finetune-mask-upload", "filename"),
+    )
+    def summarize_finetune_uploads(image_contents, mask_contents, image_names, mask_names):
+        items = []
+        for contents, names in ((image_contents, image_names), (mask_contents, mask_names)):
+            if not contents:
+                continue
+            if isinstance(contents, str):
+                contents, names = [contents], [names]
+            names = names or [None] * len(contents)
+            items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
+        return items or "No files selected yet."
+
+    @app.callback(
         Output("inference-file-summary", "children"),
         Output("lr-preview", "children"),
         Output("lr-preview", "className"),
@@ -61,14 +79,24 @@ def register_callbacks(app):
         Output("train-status", "children"),
         Output("train-status", "className"),
         Output("train-status-copy", "children"),
+        Output("stop-training", "className"),
+        Output("resume-training", "className"),
+        Output("fake-train-timer", "n_intervals"),
         Input("start-training", "n_clicks"),
         Input("stop-training", "n_clicks"),
+        Input("resume-training", "n_clicks"),
         prevent_initial_call=True,
     )
-    def toggle_training(start_clicks, stop_clicks):
+    def toggle_training(start_clicks, stop_clicks, resume_clicks):
+        running_buttons = ("danger-action", "resume-action d-none")
         if ctx.triggered_id == "start-training":
-            return False, True, False, "Running", "status-pill status-success", "Training UI demo in progress"
-        return True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user"
+            return (False, True, False, "Running", "status-pill status-success", "Training UI demo in progress",
+                    *running_buttons, 0)
+        if ctx.triggered_id == "resume-training":
+            return (False, True, False, "Running", "status-pill status-success", "Training resumed from where it stopped",
+                    *running_buttons, no_update)
+        return (True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user",
+                "danger-action d-none", "resume-action", no_update)
 
     @app.callback(
         Output("train-progress", "value"),

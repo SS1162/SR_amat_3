@@ -141,6 +141,7 @@ def training_controls():
                     children=[
                         dbc.Button("Start training", id="start-training", className="primary-action", n_clicks=0),
                         dbc.Button("Stop", id="stop-training", className="danger-action", n_clicks=0, disabled=True),
+                        dbc.Button("Resume", id="resume-training", className="resume-action d-none", n_clicks=0),
                     ],
                 ),
                 html.Div(

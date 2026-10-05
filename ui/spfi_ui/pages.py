@@ -129,13 +129,32 @@ def finetune_tab():
                                         ],
                                         className="mb-4",
                                     ),
-                                    upload_box(
-                                        "finetune-data-upload",
-                                        "Fine-tuning images",
-                                        "Dataset / images for adaptation",
-                                        icon="＋",
-                                        multiple=True,
+                                    dbc.Row(
+                                        [
+                                            dbc.Col(
+                                                upload_box(
+                                                    "finetune-data-upload",
+                                                    "Fine-tuning images",
+                                                    "Dataset / images for adaptation",
+                                                    icon="＋",
+                                                    multiple=True,
+                                                ),
+                                                md=6,
+                                            ),
+                                            dbc.Col(
+                                                upload_box(
+                                                    "finetune-mask-upload",
+                                                    "Optional masks",
+                                                    "Matching masks for the fine-tuning images",
+                                                    icon="◌",
+                                                    multiple=True,
+                                                ),
+                                                md=6,
+                                            ),
+                                        ],
+                                        className="g-3",
                                     ),
+                                    html.Div(id="finetune-upload-summary", className="upload-summary"),
                                 ]
                             ),
                         ),
