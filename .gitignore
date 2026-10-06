@@ -1,3 +1,10 @@
+# Python
 __pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Training outputs (run logs, sample images, checkpoints)
 runs/
+checkpoints/
 *.pt
