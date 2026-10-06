@@ -19,4 +19,5 @@ register_callbacks(app)
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    # No auto-reloader: a code change would restart the server and kill a running training thread.
+    app.run(debug=True, use_reloader=False, port=8050)
