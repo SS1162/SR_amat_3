@@ -258,6 +258,7 @@ class SPFITrainer:
         self.best_val_loss = float("inf")
         self.no_improve    = 0
         self.last_loss: torch.Tensor | None = None
+        self.last_val: tuple[float, float] | None = None   # (val_loss, val_psnr) of the latest check
 
     # ------------------------------------------------------------------
     def _validate(self, n_samples: int = 64) -> tuple[float, float]:
@@ -320,6 +321,7 @@ class SPFITrainer:
                 self._save_checkpoint(f"iter{self.iteration:07d}")
 
                 val_l, val_p = self._validate()
+                self.last_val = (val_l, val_p)
                 print(
                     f"[iter {self.iteration:7d}]  loss={loss.item():.4f}"
                     f"  val_loss={val_l:.4f}  val_psnr={val_p:.2f} dB"

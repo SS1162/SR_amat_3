@@ -37,14 +37,17 @@ def upload_box(component_id, title, helper, icon="↥", accept="image/*", multip
     )
 
 
-def metric_card(label, value, hint, accent="cyan"):
+def metric_card(label, value, hint, accent="cyan", element_id=None):
+    """With ``element_id``, the value and hint get ids ``<element_id>-value`` / ``<element_id>-hint``."""
+    value_props = {"id": f"{element_id}-value"} if element_id else {}
+    hint_props = {"id": f"{element_id}-hint"} if element_id else {}
     return dbc.Card(
         className=f"metric-card metric-{accent}",
         children=dbc.CardBody(
             [
                 html.Div(label, className="metric-label"),
-                html.Div(value, className="metric-value"),
-                html.Div(hint, className="metric-hint"),
+                html.Div(value, className="metric-value", **value_props),
+                html.Div(hint, className="metric-hint", **hint_props),
             ]
         ),
     )

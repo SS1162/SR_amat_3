@@ -65,6 +65,31 @@ def _render_training(snap, error=None):
     return timer_off, start_off, stop_off, stop_cls, resume_cls, text, f"status-pill status-{tone}", copy, value
 
 
+def _format_elapsed(seconds):
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
+
+
+def _render_metrics(snap):
+    """Returns value/hint pairs for the loss, validation, iteration and elapsed cards."""
+    if snap["state"] == "idle":
+        return ("—", "Available when a run begins", "—", "Available after the first checkpoint",
+                "0", "No active training run", "00:00", "Training time, excluding pauses")
+
+    iteration, ckpt_every = snap["iteration"], snap["ckpt_every"]
+    loss = f"{snap['loss']:.4f}" if snap["loss"] is not None else "—"
+    if snap["val"] is not None:
+        val_loss, val_psnr = snap["val"]
+        val, val_hint = f"{val_psnr:.2f} dB", f"val loss {val_loss:.4f} · higher PSNR is better"
+    else:
+        val, val_hint = "—", "Available after the first checkpoint"
+    next_ckpt = (iteration // ckpt_every + 1) * ckpt_every if ckpt_every else None
+    iter_hint = f"Next checkpoint at {next_ckpt}" if next_ckpt else "Preparing…"
+    return (loss, "Latest training iteration", val, val_hint,
+            str(iteration), iter_hint, _format_elapsed(snap["elapsed"]), "Training time, excluding pauses")
+
+
 def _empty_preview(message):
     return [
         html.Div("▧", className="preview-placeholder-icon"),
@@ -152,6 +177,21 @@ def register_callbacks(app):
         except ValueError as exc:
             error = str(exc)
         return _render_training(RUN.snapshot(), error)
+
+    @app.callback(
+        Output("metric-loss-value", "children"),
+        Output("metric-loss-hint", "children"),
+        Output("metric-val-value", "children"),
+        Output("metric-val-hint", "children"),
+        Output("metric-iter-value", "children"),
+        Output("metric-iter-hint", "children"),
+        Output("metric-elapsed-value", "children"),
+        Output("metric-elapsed-hint", "children"),
+        Input("train-poll-timer", "n_intervals"),
+        Input("train-poll-timer", "disabled"),
+    )
+    def update_training_metrics(_tick, _timer_disabled):
+        return _render_metrics(RUN.snapshot())
 
     @app.callback(
         Output("inference-status", "children"),

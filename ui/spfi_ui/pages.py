@@ -94,10 +94,10 @@ def scratch_tab():
             html.Div(
                 className="metrics-grid mt-4",
                 children=[
-                    metric_card("Training loss", "—", "Available when a run begins", "cyan"),
-                    metric_card("Validation metric", "—", "Connect to your backend metric", "violet"),
-                    metric_card("Epoch", "0", "Current / total epochs", "green"),
-                    metric_card("Elapsed", "00:00", "Runtime of active experiment", "amber"),
+                    metric_card("Training loss", "—", "Available when a run begins", "cyan", "metric-loss"),
+                    metric_card("Validation PSNR", "—", "Available after the first checkpoint", "violet", "metric-val"),
+                    metric_card("Iteration", "0", "No active training run", "green", "metric-iter"),
+                    metric_card("Elapsed", "00:00", "Training time, excluding pauses", "amber", "metric-elapsed"),
                 ],
             ),
         ],

@@ -10,6 +10,7 @@ import io
 import shutil
 import sys
 import threading
+import time
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
@@ -63,6 +64,8 @@ class TrainingRun:
         self.error = None
         self.run_dir = None
         self.ckpt_every = None
+        self._elapsed = 0.0          # seconds spent in finished train() segments
+        self._segment_start = None   # time.monotonic() when the current segment began
 
     def start(self, image_contents, image_names, mask_contents, mask_names, run_dir, device):
         with self._lock:
@@ -93,6 +96,7 @@ class TrainingRun:
             self.trainer = None
             self.error = None
             self.run_dir = run_dir
+            self._elapsed, self._segment_start = 0.0, None
             self.state = "preparing"
             self._stop_event.clear()
             self._thread = threading.Thread(
@@ -135,6 +139,7 @@ class TrainingRun:
         self._train()
 
     def _train(self):
+        self._segment_start = time.monotonic()
         try:
             self.trainer.train(stop_event=self._stop_event)
         except Exception as exc:
@@ -144,6 +149,9 @@ class TrainingRun:
 
     def _finish(self, error=None):
         with self._lock:
+            if self._segment_start is not None:
+                self._elapsed += time.monotonic() - self._segment_start
+                self._segment_start = None
             if error is not None:
                 self.state = "error"
                 self.error = f"{type(error).__name__}: {error}"
@@ -155,7 +163,11 @@ class TrainingRun:
     def snapshot(self):
         trainer = self.trainer
         last_loss = getattr(trainer, "last_loss", None)
+        segment_start = self._segment_start
+        elapsed = self._elapsed + (time.monotonic() - segment_start if segment_start is not None else 0.0)
         return {
+            "val": getattr(trainer, "last_val", None),
+            "elapsed": elapsed,
             "state": self.state,
             "error": self.error,
             "iteration": trainer.iteration if trainer is not None else 0,
