@@ -113,6 +113,7 @@ def training_controls():
                             ],
                             className="mb-3",
                         ),
+                        html.Div(id="output-path-feedback", className="field-feedback"),
                     ]
                 ),
                 html.Div(

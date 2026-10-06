@@ -232,6 +232,7 @@ def inference_page():
                                                 dbc.Button("Choose", id="choose-inference-output", className="input-button"),
                                             ]
                                         ),
+                                        html.Div(id="inference-output-path-feedback", className="field-feedback"),
                                     ],
                                     lg=4,
                                 ),

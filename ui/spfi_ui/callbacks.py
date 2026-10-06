@@ -1,3 +1,5 @@
+import os
+
 from dash import Input, Output, State, ctx, html, no_update
 
 
@@ -15,6 +17,17 @@ def _empty_preview(message):
         html.Div("▧", className="preview-placeholder-icon"),
         html.Div(message, className="preview-placeholder-copy"),
     ]
+
+
+def _directory_status(path_value):
+    if not path_value or not path_value.strip():
+        return False, "soft-input is-invalid", "Directory path is required.", "field-feedback field-feedback-invalid"
+
+    normalized_path = os.path.expanduser(path_value.strip())
+    if not os.path.isdir(normalized_path):
+        return False, "soft-input is-invalid", "Directory does not exist.", "field-feedback field-feedback-invalid"
+
+    return True, "soft-input is-valid", "Directory exists.", "field-feedback field-feedback-valid"
 
 
 def register_callbacks(app):
@@ -55,20 +68,46 @@ def register_callbacks(app):
         return chips, html.Img(src=contents[0], className="preview-image"), "image-preview"
 
     @app.callback(
-        Output("fake-train-timer", "disabled"),
         Output("start-training", "disabled"),
+        Output("output-path", "className"),
+        Output("output-path-feedback", "children"),
+        Output("output-path-feedback", "className"),
+        Input("output-path", "value"),
+        Input("fake-train-timer", "disabled"),
+    )
+    def validate_training_output_path(path_value, timer_disabled):
+        is_valid, input_class_name, feedback, feedback_class_name = _directory_status(path_value)
+        return (not is_valid) or (not timer_disabled), input_class_name, feedback, feedback_class_name
+
+    @app.callback(
+        Output("run-inference", "disabled"),
+        Output("inference-output-path", "className"),
+        Output("inference-output-path-feedback", "children"),
+        Output("inference-output-path-feedback", "className"),
+        Input("inference-output-path", "value"),
+    )
+    def validate_inference_output_path(path_value):
+        is_valid, input_class_name, feedback, feedback_class_name = _directory_status(path_value)
+        return not is_valid, input_class_name, feedback, feedback_class_name
+
+    @app.callback(
+        Output("fake-train-timer", "disabled"),
         Output("stop-training", "disabled"),
         Output("train-status", "children"),
         Output("train-status", "className"),
         Output("train-status-copy", "children"),
         Input("start-training", "n_clicks"),
         Input("stop-training", "n_clicks"),
+        State("output-path", "value"),
         prevent_initial_call=True,
     )
-    def toggle_training(start_clicks, stop_clicks):
+    def toggle_training(start_clicks, stop_clicks, output_path):
+        is_valid, _, _, _ = _directory_status(output_path)
+        if ctx.triggered_id == "start-training" and not is_valid:
+            return True, True, "Invalid path", "status-pill status-warning", "Choose an existing output directory before starting."
         if ctx.triggered_id == "start-training":
-            return False, True, False, "Running", "status-pill status-success", "Training UI demo in progress"
-        return True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user"
+            return False, False, "Running", "status-pill status-success", "Training UI demo in progress"
+        return True, True, "Stopped", "status-pill status-warning", "Training stopped by user"
 
     @app.callback(
         Output("train-progress", "value"),
@@ -87,9 +126,13 @@ def register_callbacks(app):
         Output("hr-preview", "className"),
         Input("run-inference", "n_clicks"),
         State("inference-upload", "contents"),
+        State("inference-output-path", "value"),
         prevent_initial_call=True,
     )
-    def demo_inference(n_clicks, contents):
+    def demo_inference(n_clicks, contents, output_path):
+        is_valid, _, _, _ = _directory_status(output_path)
+        if not is_valid:
+            return "Invalid output path", "status-pill status-warning", no_update, no_update
         if not contents:
             return (
                 "Input required",
