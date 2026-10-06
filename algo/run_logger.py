@@ -30,7 +30,7 @@ from PIL import Image
 def tensor_to_png(t: torch.Tensor, path: Path) -> None:
     """Save a [1,H,W] (or [H,W]) tensor in [0,1] as an 8-bit grayscale PNG."""
     arr = (t.detach().clamp(0, 1).squeeze().cpu().numpy() * 255).round().astype(np.uint8)
-    Image.fromarray(arr, mode="L").save(path)
+    Image.fromarray(arr).save(path)   # 2-D uint8 is saved as "L"; the mode= argument is deprecated
 
 
 class RunLogger:
