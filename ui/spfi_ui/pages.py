@@ -25,7 +25,7 @@ def scratch_tab():
                                         html.Div("01 · DATA", className="card-kicker"),
                                         html.H4("Training inputs", className="card-title"),
                                         html.P(
-                                            "Add the source image. A matching mask can be provided when the training sample requires one.",
+                                            "Add the training images. Matching masks can be added optionally, using the same file names as the images.",
                                             className="card-copy",
                                         ),
                                         dbc.Row(
@@ -33,18 +33,20 @@ def scratch_tab():
                                                 dbc.Col(
                                                     upload_box(
                                                         "train-image-upload",
-                                                        "Source image",
-                                                        "PNG, JPG, TIFF · required",
+                                                        "Training images",
+                                                        "PNG · required",
                                                         icon="＋",
+                                                        multiple=True,
                                                     ),
                                                     md=6,
                                                 ),
                                                 dbc.Col(
                                                     upload_box(
                                                         "mask-upload",
-                                                        "Optional mask",
-                                                        "Matching mask for the source image",
+                                                        "Optional masks",
+                                                        "Same file names as the images",
                                                         icon="◌",
+                                                        multiple=True,
                                                     ),
                                                     md=6,
                                                 ),

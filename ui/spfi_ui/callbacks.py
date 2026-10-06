@@ -10,6 +10,19 @@ def _parse_upload(contents, filename):
     )
 
 
+def _summarize_uploads(*uploads):
+    """uploads: (contents, filenames) pairs from multi-file dcc.Upload components."""
+    items = []
+    for contents, names in uploads:
+        if not contents:
+            continue
+        if isinstance(contents, str):
+            contents, names = [contents], [names]
+        names = names or [None] * len(contents)
+        items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
+    return items or "No files selected yet."
+
+
 def _empty_preview(message):
     return [
         html.Div("▧", className="preview-placeholder-icon"),
@@ -25,13 +38,8 @@ def register_callbacks(app):
         State("train-image-upload", "filename"),
         State("mask-upload", "filename"),
     )
-    def summarize_training_uploads(image_contents, mask_contents, image_name, mask_name):
-        items = []
-        if image_contents:
-            items.append(_parse_upload(image_contents, image_name))
-        if mask_contents:
-            items.append(_parse_upload(mask_contents, mask_name))
-        return items or "No files selected yet."
+    def summarize_training_uploads(image_contents, mask_contents, image_names, mask_names):
+        return _summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
 
     @app.callback(
         Output("finetune-upload-summary", "children"),
@@ -41,15 +49,7 @@ def register_callbacks(app):
         State("finetune-mask-upload", "filename"),
     )
     def summarize_finetune_uploads(image_contents, mask_contents, image_names, mask_names):
-        items = []
-        for contents, names in ((image_contents, image_names), (mask_contents, mask_names)):
-            if not contents:
-                continue
-            if isinstance(contents, str):
-                contents, names = [contents], [names]
-            names = names or [None] * len(contents)
-            items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
-        return items or "No files selected yet."
+        return _summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
 
     @app.callback(
         Output("inference-file-summary", "children"),
