@@ -34,6 +34,7 @@ import hashlib
 import math
 import os
 import random
+import threading
 from pathlib import Path
 from typing import List, Tuple
 
@@ -256,6 +257,7 @@ class SPFITrainer:
         self.iteration     = 0
         self.best_val_loss = float("inf")
         self.no_improve    = 0
+        self.last_loss: torch.Tensor | None = None
 
     # ------------------------------------------------------------------
     def _validate(self, n_samples: int = 64) -> tuple[float, float]:
@@ -287,11 +289,19 @@ class SPFITrainer:
         print(f"[ckpt] saved → {path}")
 
     # ------------------------------------------------------------------
-    def train(self) -> None:
+    def train(self, stop_event: threading.Event | None = None) -> None:
+        """Run until early stopping, or until ``stop_event`` is set.
+
+        Calling ``train()`` again after a stop continues from the current
+        iteration, model and optimizer state.
+        """
         self.model.train()
         print("[train] starting — Ctrl-C to stop early")
 
         while True:
+            if stop_event is not None and stop_event.is_set():
+                print(f"[train] stopped at iteration {self.iteration}")
+                break
             self.iteration += 1
 
             lr_patch, hr_patch = self.train_ds.sample(self._train_rng)
@@ -303,6 +313,7 @@ class SPFITrainer:
             loss = total_loss(sr, hr_t)
             loss.backward()
             self.optimizer.step()
+            self.last_loss = loss.detach()
 
             # ---- periodic checkpoint + validation ----
             if self.iteration % CKPT_EVERY == 0:

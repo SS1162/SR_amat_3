@@ -10,7 +10,7 @@ def build_layout():
     return html.Div(
         className="app-shell",
         children=[
-            dcc.Interval(id="fake-train-timer", interval=700, n_intervals=0, disabled=True),
+            dcc.Interval(id="train-poll-timer", interval=1000, n_intervals=0, disabled=True),
             topbar(),
             html.Main(
                 className="main-stage",

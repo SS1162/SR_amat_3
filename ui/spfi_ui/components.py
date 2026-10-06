@@ -105,8 +105,8 @@ def training_controls():
                             [
                                 dbc.Input(
                                     id="output-path",
-                                    placeholder="/runs/experiment_001",
-                                    value="/runs/experiment_001",
+                                    placeholder="runs",
+                                    value="runs",
                                     className="soft-input",
                                 ),
                                 dbc.Button("Choose", id="choose-output", className="input-button", n_clicks=0),

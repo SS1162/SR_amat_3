@@ -1,4 +1,8 @@
-from dash import Input, Output, State, ctx, html, no_update
+from pathlib import Path
+
+from dash import Input, Output, State, ctx, html
+
+from .training_runner import RUN
 
 
 def _parse_upload(contents, filename):
@@ -21,6 +25,44 @@ def _summarize_uploads(*uploads):
         names = names or [None] * len(contents)
         items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
     return items or "No files selected yet."
+
+
+def _render_training(snap, error=None):
+    """Map a TrainingRun snapshot to the training-controls outputs.
+
+    Returns: timer disabled, start disabled, stop disabled, stop class, resume class,
+    status text, status class, status copy, progress value.
+    """
+    state, iteration = snap["state"], snap["iteration"]
+    loss = f" · loss {snap['loss']:.4f}" if snap["loss"] is not None else ""
+    ckpt_every = snap["ckpt_every"]
+    progress = 100 * (iteration % ckpt_every) / ckpt_every if ckpt_every else 0
+    stop_shown, resume_hidden = "danger-action", "resume-action d-none"
+
+    if state == "preparing":
+        out = (False, True, False, stop_shown, resume_hidden, "Preparing", "warning",
+               "Saving data and building the model…", 0)
+    elif state == "running":
+        out = (False, True, False, stop_shown, resume_hidden, "Running", "success",
+               f"Iteration {iteration}{loss} · bar = progress to next checkpoint", progress)
+    elif state == "stopping":
+        out = (False, True, True, stop_shown, resume_hidden, "Stopping", "warning",
+               "Finishing the current iteration…", progress)
+    elif state == "stopped":
+        out = (True, False, True, "danger-action d-none", "resume-action", "Stopped", "warning",
+               f"Stopped at iteration {iteration}{loss}", progress)
+    elif state == "finished":
+        out = (True, False, True, stop_shown, resume_hidden, "Finished", "success",
+               f"Early stopping at iteration {iteration} · checkpoints in {snap['run_dir']}", 100)
+    elif state == "error":
+        out = (True, False, True, stop_shown, resume_hidden, "Error", "danger", snap["error"], 0)
+    else:
+        out = (True, False, True, stop_shown, resume_hidden, "Idle", "muted", "No active training run", 0)
+
+    timer_off, start_off, stop_off, stop_cls, resume_cls, text, tone, copy, value = out
+    if error:
+        text, tone, copy = "Input required", "danger", error
+    return timer_off, start_off, stop_off, stop_cls, resume_cls, text, f"status-pill status-{tone}", copy, value
 
 
 def _empty_preview(message):
@@ -73,40 +115,43 @@ def register_callbacks(app):
         return chips, html.Img(src=contents[0], className="preview-image"), "image-preview"
 
     @app.callback(
-        Output("fake-train-timer", "disabled"),
+        Output("train-poll-timer", "disabled"),
         Output("start-training", "disabled"),
         Output("stop-training", "disabled"),
+        Output("stop-training", "className"),
+        Output("resume-training", "className"),
         Output("train-status", "children"),
         Output("train-status", "className"),
         Output("train-status-copy", "children"),
-        Output("stop-training", "className"),
-        Output("resume-training", "className"),
-        Output("fake-train-timer", "n_intervals"),
+        Output("train-progress", "value"),
         Input("start-training", "n_clicks"),
         Input("stop-training", "n_clicks"),
         Input("resume-training", "n_clicks"),
-        prevent_initial_call=True,
+        Input("train-poll-timer", "n_intervals"),
+        State("train-image-upload", "contents"),
+        State("train-image-upload", "filename"),
+        State("mask-upload", "contents"),
+        State("mask-upload", "filename"),
+        State("output-path", "value"),
+        State("run-name", "value"),
+        State("device-select", "value"),
     )
-    def toggle_training(start_clicks, stop_clicks, resume_clicks):
-        running_buttons = ("danger-action", "resume-action d-none")
-        if ctx.triggered_id == "start-training":
-            return (False, True, False, "Running", "status-pill status-success", "Training UI demo in progress",
-                    *running_buttons, 0)
-        if ctx.triggered_id == "resume-training":
-            return (False, True, False, "Running", "status-pill status-success", "Training resumed from where it stopped",
-                    *running_buttons, no_update)
-        return (True, False, True, "Stopped", "status-pill status-warning", "Training stopped by user",
-                "danger-action d-none", "resume-action", no_update)
-
-    @app.callback(
-        Output("train-progress", "value"),
-        Input("fake-train-timer", "n_intervals"),
-        State("fake-train-timer", "disabled"),
-    )
-    def update_fake_progress(n_intervals, disabled):
-        if disabled:
-            return no_update
-        return min((n_intervals * 7) % 101, 100)
+    def control_training(_start, _stop, _resume, _tick, images, image_names, masks, mask_names,
+                         output_path, run_name, device):
+        error = None
+        try:
+            if ctx.triggered_id == "start-training":
+                if not output_path or not run_name:
+                    raise ValueError("Output directory and run name are required")
+                RUN.start(images, image_names, masks, mask_names,
+                          Path(output_path) / run_name, None if device == "auto" else device)
+            elif ctx.triggered_id == "stop-training":
+                RUN.stop()
+            elif ctx.triggered_id == "resume-training":
+                RUN.resume()
+        except ValueError as exc:
+            error = str(exc)
+        return _render_training(RUN.snapshot(), error)
 
     @app.callback(
         Output("inference-status", "children"),
