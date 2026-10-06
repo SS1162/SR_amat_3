@@ -1,3 +1,5 @@
+import socket
+
 from dash import Dash
 import dash_bootstrap_components as dbc
 
@@ -18,5 +20,13 @@ app.layout = build_layout()
 register_callbacks(app)
 
 
+def _available_port(start_port=8050, host="127.0.0.1", max_attempts=20):
+    for port in range(start_port, start_port + max_attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex((host, port)) != 0:
+                return port
+    raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts - 1}")
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+    app.run(debug=False, host="127.0.0.1", port=_available_port())
