@@ -344,12 +344,18 @@ class SPFITrainer:
 # CLI
 # ---------------------------------------------------------------------------
 
+def _default_emps_dir() -> Path | None:
+    """The original layout's dataset location, if this checkout is nested deep enough."""
+    parents = Path(__file__).resolve().parents
+    return parents[5] / "datasets" / "emps" / "EMPS" if len(parents) > 5 else None
+
+
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train SPFI ×4 on EMPS")
     p.add_argument(
         "--emps_dir",
         type=Path,
-        default=Path(__file__).resolve().parents[5] / "datasets" / "emps" / "EMPS",
+        default=_default_emps_dir(),
         help="Path to the EMPS root directory (contains images/)",
     )
     p.add_argument(
@@ -367,7 +373,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--seed",     type=int,   default=0)
     p.add_argument("--device",   type=str,   default=None,
                    help="'cuda', 'cpu', or None for auto-detect")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.emps_dir is None:
+        p.error("--emps_dir is required (no default dataset location for this checkout)")
+    return args
 
 
 def main() -> None:
