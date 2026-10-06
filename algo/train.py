@@ -36,7 +36,7 @@ import os
 import random
 import threading
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 import torch
@@ -203,6 +203,49 @@ def psnr(pred: torch.Tensor, target: torch.Tensor) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Weight initialization registry
+# ---------------------------------------------------------------------------
+# Each entry prepares a freshly built model before training starts. Add a new
+# mode by decorating a function with @register_init("<name>"); the trainer and
+# the --init CLI choices pick it up automatically.
+
+INIT_REGISTRY: dict[str, Callable[["SPFITrainer", Path | None], None]] = {}
+
+
+def register_init(name: str):
+    def wrapper(fn):
+        INIT_REGISTRY[name] = fn
+        return fn
+    return wrapper
+
+
+def resolve_weights(source: str | Path) -> Path:
+    """Return a local path for a weights file. Only local files are supported for now."""
+    path = Path(source)
+    if not path.is_file():
+        raise FileNotFoundError(f"weights file not found: {path}")
+    return path
+
+
+@register_init("scratch")
+def _init_scratch(trainer: "SPFITrainer", weights: Path | None) -> None:
+    """Keep the random initialization from build_spfi."""
+    if weights is not None:
+        raise ValueError("weights are only used with init='finetune'")
+
+
+@register_init("finetune")
+def _init_finetune(trainer: "SPFITrainer", weights: Path | None) -> None:
+    """Start from an existing checkpoint's model weights; optimizer and counters start fresh."""
+    if weights is None:
+        raise ValueError("init='finetune' needs a weights file")
+    path = resolve_weights(weights)
+    ckpt = torch.load(path, map_location=trainer.device, weights_only=True)
+    trainer.model.load_state_dict(ckpt["model_state"])
+    print(f"[train] fine-tuning from {path} (trained {ckpt.get('iteration', '?')} iterations)")
+
+
+# ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
 
@@ -217,7 +260,11 @@ class SPFITrainer:
         val_every: int = CKPT_EVERY,
         seed: int = 0,
         device: str | None = None,
+        init: str = "scratch",
+        weights: Path | None = None,
     ) -> None:
+        if init not in INIT_REGISTRY:
+            raise ValueError(f"unknown init '{init}', expected one of {sorted(INIT_REGISTRY)}")
         self.ckpt_dir = ckpt_dir
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.val_every = val_every
@@ -251,6 +298,7 @@ class SPFITrainer:
 
         # ---- model ----
         self.model = build_spfi(scale=SCALE, embed_dim=48).to(self.device)
+        INIT_REGISTRY[init](self, weights)
         self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
 
         # ---- state ----
@@ -375,9 +423,15 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--seed",     type=int,   default=0)
     p.add_argument("--device",   type=str,   default=None,
                    help="'cuda', 'cpu', or None for auto-detect")
+    p.add_argument("--init",     type=str,   default="scratch", choices=sorted(INIT_REGISTRY),
+                   help="How to initialize the model before training")
+    p.add_argument("--weights",  type=Path,  default=None,
+                   help="Checkpoint (.pt) to start from; required with --init finetune")
     args = p.parse_args()
     if args.emps_dir is None:
         p.error("--emps_dir is required (no default dataset location for this checkout)")
+    if args.init == "finetune" and args.weights is None:
+        p.error("--init finetune needs --weights <checkpoint.pt>")
     return args
 
 
@@ -392,6 +446,8 @@ def main() -> None:
         val_every = args.val_every,
         seed      = args.seed,
         device    = args.device,
+        init      = args.init,
+        weights   = args.weights,
     )
     trainer.train()
 

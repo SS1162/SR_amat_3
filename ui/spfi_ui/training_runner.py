@@ -63,14 +63,23 @@ class TrainingRun:
         self.state = "idle"
         self.error = None
         self.run_dir = None
+        self.mode = None              # "scratch" or "finetune" for the current/last run
         self.ckpt_every = None
         self._elapsed = 0.0          # seconds spent in finished train() segments
         self._segment_start = None   # time.monotonic() when the current segment began
 
-    def start(self, image_contents, image_names, mask_contents, mask_names, run_dir, device):
+    def start(self, image_contents, image_names, mask_contents, mask_names, run_dir, device,
+              mode="scratch", weights=None):
+        """mode: "scratch" or "finetune" (an algo.train INIT_REGISTRY key); weights: checkpoint for finetune."""
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise ValueError("A training run is already active")
+            if mode == "finetune":
+                if not weights:
+                    raise ValueError("Choose the checkpoint (.pt) to fine-tune from")
+                weights = Path(weights)
+                if not weights.is_file():
+                    raise ValueError(f"Checkpoint not found: {weights}")
 
             images, image_names = _as_lists(image_contents, image_names)
             masks, mask_names = _as_lists(mask_contents, mask_names)
@@ -96,12 +105,14 @@ class TrainingRun:
             self.trainer = None
             self.error = None
             self.run_dir = run_dir
+            self.mode = mode
             self._elapsed, self._segment_start = 0.0, None
             self.state = "preparing"
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run,
-                kwargs={"data_dir": data_dir, "ckpt_dir": run_dir / "checkpoints", "device": device},
+                kwargs={"data_dir": data_dir, "ckpt_dir": run_dir / "checkpoints", "device": device,
+                        "init": mode, "weights": weights if mode == "finetune" else None},
                 daemon=True,
             )
             self._thread.start()
@@ -121,12 +132,13 @@ class TrainingRun:
             self._thread = threading.Thread(target=self._train, daemon=True)
             self._thread.start()
 
-    def _run(self, data_dir, ckpt_dir, device):
+    def _run(self, data_dir, ckpt_dir, device, init, weights):
         try:
             from algo.train import CKPT_EVERY, SPFITrainer  # torch is heavy; import only when training
 
             self.ckpt_every = CKPT_EVERY
-            trainer = SPFITrainer(emps_dir=data_dir, ckpt_dir=ckpt_dir, device=device)
+            trainer = SPFITrainer(emps_dir=data_dir, ckpt_dir=ckpt_dir, device=device,
+                                  init=init, weights=weights)
         except Exception as exc:
             self._finish(error=exc)
             return
@@ -166,6 +178,7 @@ class TrainingRun:
         segment_start = self._segment_start
         elapsed = self._elapsed + (time.monotonic() - segment_start if segment_start is not None else 0.0)
         return {
+            "mode": self.mode,
             "val": getattr(trainer, "last_val", None),
             "elapsed": elapsed,
             "state": self.state,

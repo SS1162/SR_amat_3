@@ -27,8 +27,11 @@ def _summarize_uploads(*uploads):
     return items or "No files selected yet."
 
 
-def _render_training(snap, error=None):
-    """Map a TrainingRun snapshot to the training-controls outputs.
+ACTIVE_STATES = ("preparing", "running", "stopping")
+
+
+def _render_training(snap, mode, error=None):
+    """Map a TrainingRun snapshot to the outputs of the ``mode`` panel ("scratch" or "finetune").
 
     Returns: timer disabled, start disabled, stop disabled, stop class, resume class,
     status text, status class, status copy, progress value.
@@ -39,7 +42,15 @@ def _render_training(snap, error=None):
     progress = 100 * (iteration % ckpt_every) / ckpt_every if ckpt_every else 0
     stop_shown, resume_hidden = "danger-action", "resume-action d-none"
 
-    if state == "preparing":
+    if snap["mode"] not in (None, mode):
+        # The single training slot belongs to the other tab.
+        if state in ACTIVE_STATES:
+            other = "fine-tuning" if snap["mode"] == "finetune" else "from-scratch"
+            out = (False, True, True, stop_shown, resume_hidden, "Busy", "muted",
+                   f"A {other} run is active; stop it to start here", 0)
+        else:
+            out = (True, False, True, stop_shown, resume_hidden, "Idle", "muted", "No active training run", 0)
+    elif state == "preparing":
         out = (False, True, False, stop_shown, resume_hidden, "Preparing", "warning",
                "Saving data and building the model…", 0)
     elif state == "running":
@@ -71,9 +82,9 @@ def _format_elapsed(seconds):
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
-def _render_metrics(snap):
-    """Returns value/hint pairs for the loss, validation, iteration and elapsed cards."""
-    if snap["state"] == "idle":
+def _render_metrics(snap, mode):
+    """Returns value/hint pairs for the loss, validation, iteration and elapsed cards of the ``mode`` panel."""
+    if snap["state"] == "idle" or snap["mode"] != mode:
         return ("—", "Available when a run begins", "—", "Available after the first checkpoint",
                 "0", "No active training run", "00:00", "Training time, excluding pauses")
 
@@ -95,6 +106,67 @@ def _empty_preview(message):
         html.Div("▧", className="preview-placeholder-icon"),
         html.Div(message, className="preview-placeholder-copy"),
     ]
+
+
+def _register_training_panel(app, prefix, mode, image_upload, mask_upload, weights_input=None):
+    """Callbacks for one training-controls panel (see components.training_controls(prefix))."""
+    p = prefix
+    weights_state = [State(weights_input, "value")] if weights_input else []
+
+    @app.callback(
+        Output(f"{p}train-poll-timer", "disabled"),
+        Output(f"{p}start-training", "disabled"),
+        Output(f"{p}stop-training", "disabled"),
+        Output(f"{p}stop-training", "className"),
+        Output(f"{p}resume-training", "className"),
+        Output(f"{p}train-status", "children"),
+        Output(f"{p}train-status", "className"),
+        Output(f"{p}train-status-copy", "children"),
+        Output(f"{p}train-progress", "value"),
+        Input(f"{p}start-training", "n_clicks"),
+        Input(f"{p}stop-training", "n_clicks"),
+        Input(f"{p}resume-training", "n_clicks"),
+        Input(f"{p}train-poll-timer", "n_intervals"),
+        State(image_upload, "contents"),
+        State(image_upload, "filename"),
+        State(mask_upload, "contents"),
+        State(mask_upload, "filename"),
+        State(f"{p}output-path", "value"),
+        State(f"{p}run-name", "value"),
+        State(f"{p}device-select", "value"),
+        *weights_state,
+    )
+    def control_training(_start, _stop, _resume, _tick, images, image_names, masks, mask_names,
+                         output_path, run_name, device, weights=None):
+        error = None
+        try:
+            if ctx.triggered_id == f"{p}start-training":
+                if not output_path or not run_name:
+                    raise ValueError("Output directory and run name are required")
+                RUN.start(images, image_names, masks, mask_names, Path(output_path) / run_name,
+                          None if device == "auto" else device, mode=mode, weights=weights)
+            elif ctx.triggered_id == f"{p}stop-training":
+                RUN.stop()
+            elif ctx.triggered_id == f"{p}resume-training":
+                RUN.resume()
+        except ValueError as exc:
+            error = str(exc)
+        return _render_training(RUN.snapshot(), mode, error)
+
+    @app.callback(
+        Output(f"{p}metric-loss-value", "children"),
+        Output(f"{p}metric-loss-hint", "children"),
+        Output(f"{p}metric-val-value", "children"),
+        Output(f"{p}metric-val-hint", "children"),
+        Output(f"{p}metric-iter-value", "children"),
+        Output(f"{p}metric-iter-hint", "children"),
+        Output(f"{p}metric-elapsed-value", "children"),
+        Output(f"{p}metric-elapsed-hint", "children"),
+        Input(f"{p}train-poll-timer", "n_intervals"),
+        Input(f"{p}train-poll-timer", "disabled"),
+    )
+    def update_training_metrics(_tick, _timer_disabled):
+        return _render_metrics(RUN.snapshot(), mode)
 
 
 def register_callbacks(app):
@@ -139,59 +211,9 @@ def register_callbacks(app):
         chips = [_parse_upload(content, filename) for content, filename in zip(contents, filenames)]
         return chips, html.Img(src=contents[0], className="preview-image"), "image-preview"
 
-    @app.callback(
-        Output("train-poll-timer", "disabled"),
-        Output("start-training", "disabled"),
-        Output("stop-training", "disabled"),
-        Output("stop-training", "className"),
-        Output("resume-training", "className"),
-        Output("train-status", "children"),
-        Output("train-status", "className"),
-        Output("train-status-copy", "children"),
-        Output("train-progress", "value"),
-        Input("start-training", "n_clicks"),
-        Input("stop-training", "n_clicks"),
-        Input("resume-training", "n_clicks"),
-        Input("train-poll-timer", "n_intervals"),
-        State("train-image-upload", "contents"),
-        State("train-image-upload", "filename"),
-        State("mask-upload", "contents"),
-        State("mask-upload", "filename"),
-        State("output-path", "value"),
-        State("run-name", "value"),
-        State("device-select", "value"),
-    )
-    def control_training(_start, _stop, _resume, _tick, images, image_names, masks, mask_names,
-                         output_path, run_name, device):
-        error = None
-        try:
-            if ctx.triggered_id == "start-training":
-                if not output_path or not run_name:
-                    raise ValueError("Output directory and run name are required")
-                RUN.start(images, image_names, masks, mask_names,
-                          Path(output_path) / run_name, None if device == "auto" else device)
-            elif ctx.triggered_id == "stop-training":
-                RUN.stop()
-            elif ctx.triggered_id == "resume-training":
-                RUN.resume()
-        except ValueError as exc:
-            error = str(exc)
-        return _render_training(RUN.snapshot(), error)
-
-    @app.callback(
-        Output("metric-loss-value", "children"),
-        Output("metric-loss-hint", "children"),
-        Output("metric-val-value", "children"),
-        Output("metric-val-hint", "children"),
-        Output("metric-iter-value", "children"),
-        Output("metric-iter-hint", "children"),
-        Output("metric-elapsed-value", "children"),
-        Output("metric-elapsed-hint", "children"),
-        Input("train-poll-timer", "n_intervals"),
-        Input("train-poll-timer", "disabled"),
-    )
-    def update_training_metrics(_tick, _timer_disabled):
-        return _render_metrics(RUN.snapshot())
+    _register_training_panel(app, "", "scratch", "train-image-upload", "mask-upload")
+    _register_training_panel(app, "ft-", "finetune", "finetune-data-upload", "finetune-mask-upload",
+                             weights_input="ft-weights")
 
     @app.callback(
         Output("inference-status", "children"),

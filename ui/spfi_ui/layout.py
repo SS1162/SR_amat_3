@@ -1,4 +1,4 @@
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from .config import APP_NAME
@@ -10,7 +10,6 @@ def build_layout():
     return html.Div(
         className="app-shell",
         children=[
-            dcc.Interval(id="train-poll-timer", interval=1000, n_intervals=0, disabled=True),
             topbar(),
             html.Main(
                 className="main-stage",
