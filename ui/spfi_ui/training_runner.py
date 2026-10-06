@@ -87,6 +87,8 @@ class TrainingRun:
                 raise ValueError(f"Upload at least {MIN_IMAGES} training images")
 
             run_dir = Path(run_dir)
+            if not run_dir.is_absolute():
+                run_dir = REPO_ROOT / run_dir   # "runs" = <repo>/runs, where the TensorBoard page looks
             data_dir = run_dir / "data"
             if data_dir.exists():
                 raise ValueError(f"'{run_dir}' already has data; choose another run name")
@@ -138,7 +140,7 @@ class TrainingRun:
 
             self.ckpt_every = CKPT_EVERY
             trainer = SPFITrainer(emps_dir=data_dir, ckpt_dir=ckpt_dir, device=device,
-                                  init=init, weights=weights)
+                                  init=init, weights=weights, run_dir=data_dir.parent)
         except Exception as exc:
             self._finish(error=exc)
             return

@@ -35,6 +35,7 @@ import math
 import os
 import random
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Tuple
 
@@ -47,6 +48,7 @@ from torch.optim import AdamW
 from torchvision.transforms.functional import to_tensor
 
 from .model import build_spfi
+from .run_logger import RunLogger
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -262,7 +264,10 @@ class SPFITrainer:
         device: str | None = None,
         init: str = "scratch",
         weights: Path | None = None,
+        run_dir: Path | None = None,
+        log_every: int = 10,
     ) -> None:
+        """``run_dir``: write meta.json / metrics.jsonl / samples/ there for the UI (see run_logger.py)."""
         if init not in INIT_REGISTRY:
             raise ValueError(f"unknown init '{init}', expected one of {sorted(INIT_REGISTRY)}")
         self.ckpt_dir = ckpt_dir
@@ -308,12 +313,18 @@ class SPFITrainer:
         self.last_loss: torch.Tensor | None = None
         self.last_val: tuple[float, float] | None = None   # (val_loss, val_psnr) of the latest check
 
+        # ---- run logging (optional) ----
+        self.n_train_images, self.n_val_images = len(train_files), len(val_files)
+        self.logger = RunLogger(run_dir, log_every) if run_dir is not None else None
+        self._samples: list[tuple[torch.Tensor, torch.Tensor]] = []   # fixed (lr, hr) val patches
+
     # ------------------------------------------------------------------
-    def _validate(self, n_samples: int = 64) -> tuple[float, float]:
-        """Returns (val_loss, val_psnr). val_loss drives early stopping."""
+    def _validate(self, n_samples: int = 64) -> tuple[float, float, float]:
+        """Returns (val_loss, val_psnr, val_ssim). val_loss drives early stopping."""
         self.model.eval()
         total_loss_val = 0.0
         total_psnr_val = 0.0
+        total_ssim_val = 0.0
         rng = random.Random(42)
         with torch.no_grad():
             for _ in range(n_samples):
@@ -323,8 +334,72 @@ class SPFITrainer:
                 sr = self.model(lr)
                 total_loss_val += total_loss(sr, hr).item()
                 total_psnr_val += psnr(sr, hr)
+                total_ssim_val += 1.0 - ssim_loss(sr, hr).item()
         self.model.train()
-        return total_loss_val / n_samples, total_psnr_val / n_samples
+        return total_loss_val / n_samples, total_psnr_val / n_samples, total_ssim_val / n_samples
+
+    # ------------------------------------------------------------------
+    def _bicubic_psnr(self, n_samples: int = 64) -> float:
+        """Baseline PSNR of plain bicubic upscaling, on the same val patches as _validate."""
+        total = 0.0
+        rng = random.Random(42)
+        for _ in range(n_samples):
+            lr, hr = self.val_ds.sample(rng)
+            sr = F.interpolate(lr.unsqueeze(0), scale_factor=SCALE, mode="bicubic",
+                               align_corners=False).clamp(0, 1)
+            total += psnr(sr, hr.unsqueeze(0))
+        return total / n_samples
+
+    def _gflops(self) -> float | None:
+        """Forward-pass GFLOPs on a [1,1,64,64] input; None if counting fails."""
+        try:
+            from torch.utils.flop_counter import FlopCounterMode
+
+            self.model.eval()
+            with torch.no_grad(), FlopCounterMode(display=False) as counter:
+                self.model(torch.zeros(1, 1, LR_PATCH, LR_PATCH, device=self.device))
+            return counter.get_total_flops() / 1e9
+        except Exception as exc:  # noqa: BLE001 - any failure here must not stop training
+            print(f"[log] warning: could not count FLOPs ({type(exc).__name__}: {exc})")
+            return None
+        finally:
+            self.model.train()
+
+    def _start_logging(self) -> None:
+        """Write meta.json and the fixed start samples, then the "start" event."""
+        rng = random.Random(1234)   # dedicated RNG: the training sampler is untouched
+        self._samples = [self.val_ds.sample(rng) for _ in range(4)]
+        self.logger.write_meta({
+            "run_name": self.logger.run_dir.name,
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "scale": SCALE,
+            "lr": self.optimizer.param_groups[0]["lr"],
+            "wd": self.optimizer.param_groups[0]["weight_decay"],
+            "patience": self.patience,
+            "val_every": CKPT_EVERY,   # the loop validates every CKPT_EVERY steps
+            "n_train_images": self.n_train_images,
+            "n_val_images": self.n_val_images,
+            "params": sum(p.numel() for p in self.model.parameters()),
+            "gflops": self._gflops(),
+            "bicubic_psnr": self._bicubic_psnr(),
+            "sample_ids": [1, 2, 3, 4],
+        })
+        for k, (lr, hr) in enumerate(self._samples, start=1):
+            bicubic = F.interpolate(lr.unsqueeze(0), scale_factor=SCALE, mode="bicubic",
+                                    align_corners=False).clamp(0, 1)[0]
+            self.logger.save_png(f"sample_{k}_lr.png", lr)
+            self.logger.save_png(f"sample_{k}_bicubic.png", bicubic)
+            self.logger.save_png(f"sample_{k}_hr.png", hr)
+        self.logger.log_event(0, "start")
+
+    def _save_samples(self, step: int) -> None:
+        """Model output for the fixed samples at this step (eval mode, then back to train)."""
+        self.model.eval()
+        with torch.no_grad():
+            for k, (lr, _) in enumerate(self._samples, start=1):
+                sr = self.model(lr.unsqueeze(0).to(self.device))[0]
+                self.logger.save_png(f"sample_{k}_iter{step:07d}.png", sr)
+        self.model.train()
 
     # ------------------------------------------------------------------
     def _save_checkpoint(self, tag: str) -> None:
@@ -345,11 +420,28 @@ class SPFITrainer:
         iteration, model and optimizer state.
         """
         self.model.train()
+        if self.logger is not None:
+            if self.iteration == 0:
+                self._start_logging()
+            else:
+                self.logger.log_event(self.iteration, "resume")
         print("[train] starting — Ctrl-C to stop early")
 
+        try:
+            self._train_loop(stop_event)
+        except KeyboardInterrupt:
+            print(f"[train] interrupted at iteration {self.iteration}")
+            self._log_event("stop")
+
+    def _log_event(self, event: str) -> None:
+        if self.logger is not None:
+            self.logger.log_event(self.iteration, event)
+
+    def _train_loop(self, stop_event: threading.Event | None) -> None:
         while True:
             if stop_event is not None and stop_event.is_set():
                 print(f"[train] stopped at iteration {self.iteration}")
+                self._log_event("stop")
                 break
             self.iteration += 1
 
@@ -359,16 +451,20 @@ class SPFITrainer:
 
             self.optimizer.zero_grad()
             sr = self.model(lr_t)
-            loss = total_loss(sr, hr_t)
+            c = charbonnier(sr, hr_t)
+            s = ssim_loss(sr, hr_t)
+            loss = c + LAMBDA_SSIM * s          # == total_loss(sr, hr_t), split for logging
             loss.backward()
             self.optimizer.step()
             self.last_loss = loss.detach()
+            if self.logger is not None:
+                self.logger.log_train(self.iteration, loss, c, s, self.optimizer.param_groups[0]["lr"])
 
             # ---- periodic checkpoint + validation ----
             if self.iteration % CKPT_EVERY == 0:
                 self._save_checkpoint(f"iter{self.iteration:07d}")
 
-                val_l, val_p = self._validate()
+                val_l, val_p, val_s = self._validate()
                 self.last_val = (val_l, val_p)
                 print(
                     f"[iter {self.iteration:7d}]  loss={loss.item():.4f}"
@@ -376,18 +472,25 @@ class SPFITrainer:
                     f"  best_val_loss={self.best_val_loss:.4f}"
                 )
 
-                if val_l < self.best_val_loss - 1e-6:
+                is_best = val_l < self.best_val_loss - 1e-6
+                if is_best:
                     self.best_val_loss = val_l
                     self.no_improve    = 0
                     self._save_checkpoint("best")
                 else:
                     self.no_improve += 1
-                    if self.no_improve >= self.patience:
-                        print(
-                            f"[train] early stopping after {self.patience} "
-                            f"checks without improvement."
-                        )
-                        break
+
+                if self.logger is not None:
+                    self._save_samples(self.iteration)      # images first: the val line signals they exist
+                    self.logger.log_val(self.iteration, val_l, val_p, val_s, is_best, self.no_improve)
+
+                if not is_best and self.no_improve >= self.patience:
+                    print(
+                        f"[train] early stopping after {self.patience} "
+                        f"checks without improvement."
+                    )
+                    self._log_event("early_stop")
+                    break
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +530,11 @@ def _parse_args() -> argparse.Namespace:
                    help="How to initialize the model before training")
     p.add_argument("--weights",  type=Path,  default=None,
                    help="Checkpoint (.pt) to start from; required with --init finetune")
+    p.add_argument("--run_dir",  type=Path,
+                   default=Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S"),
+                   help="Run folder for the UI (meta.json, metrics.jsonl, samples/)")
+    p.add_argument("--log_every", type=int,  default=10,
+                   help="Write an averaged train line to metrics.jsonl every N iterations")
     args = p.parse_args()
     if args.emps_dir is None:
         p.error("--emps_dir is required (no default dataset location for this checkout)")
@@ -448,6 +556,8 @@ def main() -> None:
         device    = args.device,
         init      = args.init,
         weights   = args.weights,
+        run_dir   = args.run_dir,
+        log_every = args.log_every,
     )
     trainer.train()
 
