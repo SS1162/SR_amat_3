@@ -216,7 +216,24 @@ def inference_page():
                                             ]
                                         ),
                                     ],
-                                    lg=5,
+                                    lg=4,
+                                ),
+                                dbc.Col(
+                                    [
+                                        html.Label("Destination directory", className="field-label"),
+                                        dbc.InputGroup(
+                                            [
+                                                dbc.Input(
+                                                    id="inference-output-path",
+                                                    placeholder="/outputs/inference",
+                                                    value="/outputs/inference",
+                                                    className="soft-input",
+                                                ),
+                                                dbc.Button("Choose", id="choose-inference-output", className="input-button"),
+                                            ]
+                                        ),
+                                    ],
+                                    lg=4,
                                 ),
                                 dbc.Col(
                                     [
@@ -232,11 +249,11 @@ def inference_page():
                                             className="mode-radio",
                                         ),
                                     ],
-                                    lg=4,
+                                    lg=2,
                                 ),
                                 dbc.Col(
                                     dbc.Button("Run inference", id="run-inference", className="primary-action inference-btn", n_clicks=0),
-                                    lg=3,
+                                    lg=2,
                                     className="d-flex align-items-end",
                                 ),
                             ],
