@@ -3,7 +3,8 @@ import dash_bootstrap_components as dbc
 
 from .config import APP_NAME
 from .components import topbar
-from .pages import inference_page, tensorboard_page, training_page
+from .pages import inference_page, training_page
+from .tensorboard_page import tensorboard_page
 
 
 def build_layout():
