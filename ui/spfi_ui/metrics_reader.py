@@ -143,7 +143,11 @@ def load_run(run: str) -> RunData:
 # ---------------------------------------------------------------------------
 
 def sample_steps(run: str) -> list[int]:
-    """Iterations for which every sample has an SR image, ascending."""
+    """Iterations for which every sample has an SR image, ascending.
+
+    Only steps that already have a "val" line count: the trainer writes the PNGs first and
+    the val line after them, so this never returns a step whose images are half-written.
+    """
     sample_dir = _run_dir(run) / "samples"
     if not sample_dir.is_dir():
         return []
@@ -153,7 +157,8 @@ def sample_steps(run: str) -> list[int]:
         if m:
             found.setdefault(int(m.group(2)), set()).add(int(m.group(1)))
     ids = set((read_meta(run) or {}).get("sample_ids") or [k for ks in found.values() for k in ks])
-    return sorted(step for step, ks in found.items() if ids <= ks)
+    validated = {r["step"] for r in load_run(run).val}
+    return sorted(step for step, ks in found.items() if ids <= ks and step in validated)
 
 
 def _sample_path(run: str, k: int, which: str | int) -> Path:
