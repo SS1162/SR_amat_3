@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 
 from dash import Input, Output, State, ctx, html, no_update
 
@@ -45,6 +47,36 @@ def _directory_status(path_value):
     return True, "soft-input is-valid", "Directory exists.", "field-feedback field-feedback-valid"
 
 
+def _mac_choose_folder(prompt_text):
+    apple_script = f'POSIX path of (choose folder with prompt "{prompt_text}")'
+    result = subprocess.run(["osascript", "-e", apple_script], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    selected = result.stdout.strip()
+    return selected or None
+
+
+def _mac_choose_file(prompt_text):
+    apple_script = f'POSIX path of (choose file with prompt "{prompt_text}")'
+    result = subprocess.run(["osascript", "-e", apple_script], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    selected = result.stdout.strip()
+    return selected or None
+
+
+def _choose_folder(prompt_text):
+    if sys.platform == "darwin":
+        return _mac_choose_folder(prompt_text)
+    return None
+
+
+def _choose_file(prompt_text):
+    if sys.platform == "darwin":
+        return _mac_choose_file(prompt_text)
+    return None
+
+
 def register_callbacks(app):
     @app.callback(
         Output("app-shell", "className"),
@@ -54,6 +86,36 @@ def register_callbacks(app):
         if theme_value and "light" in theme_value:
             return "app-shell theme-light"
         return "app-shell theme-dark"
+
+    @app.callback(
+        Output("output-path", "value"),
+        Input("choose-output", "n_clicks"),
+        State("output-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_training_output_directory(n_clicks, current_value):
+        selected = _choose_folder("Select Routing folder")
+        return selected if selected else current_value
+
+    @app.callback(
+        Output("inference-output-path", "value"),
+        Input("choose-inference-output", "n_clicks"),
+        State("inference-output-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_inference_output_directory(n_clicks, current_value):
+        selected = _choose_folder("Select Routing folder")
+        return selected if selected else current_value
+
+    @app.callback(
+        Output("model-path", "value"),
+        Input("choose-model", "n_clicks"),
+        State("model-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_model_file(n_clicks, current_value):
+        selected = _choose_file("Select model file")
+        return selected if selected else current_value
 
     @app.callback(
         Output("train-upload-summary", "children"),
