@@ -19,6 +19,21 @@ def _empty_preview(message):
     ]
 
 
+def _upload_chips(contents, filenames):
+    if not contents:
+        return []
+
+    if isinstance(contents, str):
+        contents = [contents]
+
+    if filenames is None:
+        filenames = [None] * len(contents)
+    elif isinstance(filenames, str):
+        filenames = [filenames]
+
+    return [_parse_upload(content, filename) for content, filename in zip(contents, filenames)]
+
+
 def _directory_status(path_value):
     if not path_value or not path_value.strip():
         return False, "soft-input is-invalid", "Directory path is required.", "field-feedback field-feedback-invalid"
@@ -44,15 +59,32 @@ def register_callbacks(app):
         Output("train-upload-summary", "children"),
         Input("train-image-upload", "contents"),
         Input("mask-upload", "contents"),
+        Input("train-small-image-upload", "contents"),
         State("train-image-upload", "filename"),
         State("mask-upload", "filename"),
+        State("train-small-image-upload", "filename"),
     )
-    def summarize_training_uploads(image_contents, mask_contents, image_name, mask_name):
+    def summarize_training_uploads(image_contents, mask_contents, small_contents, image_name, mask_name, small_name):
         items = []
         if image_contents:
             items.append(_parse_upload(image_contents, image_name))
         if mask_contents:
             items.append(_parse_upload(mask_contents, mask_name))
+        if small_contents:
+            items.append(_parse_upload(small_contents, small_name))
+        return items or "No files selected yet."
+
+    @app.callback(
+        Output("finetune-upload-summary", "children"),
+        Input("finetune-data-upload", "contents"),
+        Input("finetune-small-image-upload", "contents"),
+        State("finetune-data-upload", "filename"),
+        State("finetune-small-image-upload", "filename"),
+    )
+    def summarize_finetune_uploads(data_contents, small_contents, data_filenames, small_filename):
+        items = _upload_chips(data_contents, data_filenames)
+        if small_contents:
+            items.append(_parse_upload(small_contents, small_filename))
         return items or "No files selected yet."
 
     @app.callback(
@@ -66,14 +98,9 @@ def register_callbacks(app):
         if not contents:
             return "No files selected yet.", _empty_preview("Input preview will appear here"), "image-preview empty-preview"
 
+        chips = _upload_chips(contents, filenames)
         if isinstance(contents, str):
             contents = [contents]
-        if filenames is None:
-            filenames = [None] * len(contents)
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        chips = [_parse_upload(content, filename) for content, filename in zip(contents, filenames)]
         return chips, html.Img(src=contents[0], className="preview-image"), "image-preview"
 
     @app.callback(

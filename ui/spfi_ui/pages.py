@@ -25,7 +25,7 @@ def scratch_tab():
                                         html.Div("01 · DATA", className="card-kicker"),
                                         html.H4("Training inputs", className="card-title"),
                                         html.P(
-                                            "Add the source image. A matching mask can be provided when the training sample requires one.",
+                                            "Add the source image. A matching mask and an optional small image can be provided when needed.",
                                             className="card-copy",
                                         ),
                                         dbc.Row(
@@ -37,7 +37,7 @@ def scratch_tab():
                                                         "PNG, JPG, TIFF · required",
                                                         icon="＋",
                                                     ),
-                                                    md=6,
+                                                    md=4,
                                                 ),
                                                 dbc.Col(
                                                     upload_box(
@@ -46,7 +46,16 @@ def scratch_tab():
                                                         "Matching mask for the source image",
                                                         icon="◌",
                                                     ),
-                                                    md=6,
+                                                    md=4,
+                                                ),
+                                                dbc.Col(
+                                                    upload_box(
+                                                        "train-small-image-upload",
+                                                        "Small image",
+                                                        "Optional small image input",
+                                                        icon="▣",
+                                                    ),
+                                                    md=4,
                                                 ),
                                             ],
                                             className="g-3",
@@ -136,6 +145,14 @@ def finetune_tab():
                                         icon="＋",
                                         multiple=True,
                                     ),
+                                    html.Div(className="mt-3"),
+                                    upload_box(
+                                        "finetune-small-image-upload",
+                                        "Small image",
+                                        "Optional small image for fine-tuning",
+                                        icon="▣",
+                                    ),
+                                    html.Div(id="finetune-upload-summary", className="upload-summary"),
                                 ]
                             ),
                         ),
