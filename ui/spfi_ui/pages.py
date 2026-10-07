@@ -246,8 +246,12 @@ def inference_page():
                                                     value="/outputs/inference",
                                                     className="soft-input",
                                                 ),
-                                                dbc.Button("Choose", id="choose-inference-output", className="input-button"),
+                                                dbc.Button("Select Routing", id="choose-inference-output", className="input-button"),
                                             ]
+                                        ),
+                                        html.Div(
+                                            "Click Select Routing to open folders on your computer and choose the directory you want.",
+                                            className="field-feedback",
                                         ),
                                         html.Div(id="inference-output-path-feedback", className="field-feedback"),
                                     ],

@@ -116,9 +116,13 @@ def training_controls():
                                     value="/runs/experiment_001",
                                     className="soft-input",
                                 ),
-                                dbc.Button("Choose", id="choose-output", className="input-button", n_clicks=0),
+                                dbc.Button("Select Routing", id="choose-output", className="input-button", n_clicks=0),
                             ],
                             className="mb-3",
+                        ),
+                        html.Div(
+                            "Click Select Routing to open folders on your computer and choose the directory you want.",
+                            className="field-feedback",
                         ),
                         html.Div(id="output-path-feedback", className="field-feedback"),
                     ]
