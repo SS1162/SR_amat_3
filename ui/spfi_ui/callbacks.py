@@ -118,6 +118,16 @@ def register_callbacks(app):
         return selected if selected else current_value
 
     @app.callback(
+        Output("finetune-model-path", "value"),
+        Input("choose-finetune-model", "n_clicks"),
+        State("finetune-model-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_finetune_model_file(n_clicks, current_value):
+        selected = _choose_file("Select fine-tuning model file")
+        return selected if selected else current_value
+
+    @app.callback(
         Output("train-upload-summary", "children"),
         Input("train-image-upload", "contents"),
         Input("mask-upload", "contents"),

@@ -133,8 +133,8 @@ def finetune_tab():
                                     html.P("Choose the model that will be used as the starting point for fine-tuning.", className="card-copy"),
                                     dbc.InputGroup(
                                         [
-                                            dbc.Input(placeholder="/models/spfi_checkpoint.pt", className="soft-input"),
-                                            dbc.Button("Choose", className="input-button"),
+                                            dbc.Input(id="finetune-model-path", placeholder="/models/spfi_checkpoint.pt", className="soft-input"),
+                                            dbc.Button("Choose", id="choose-finetune-model", className="input-button"),
                                         ],
                                         className="mb-4",
                                     ),
