@@ -6,6 +6,7 @@ import dash_bootstrap_components as dbc
 from spfi_ui.callbacks import register_callbacks
 from spfi_ui.config import APP_NAME
 from spfi_ui.layout import build_layout
+from spfi_ui.tensorboard_callbacks import register_tensorboard_callbacks
 
 
 app = Dash(
@@ -18,6 +19,7 @@ server = app.server
 
 app.layout = build_layout()
 register_callbacks(app)
+register_tensorboard_callbacks(app)
 
 
 def _available_port(start_port=8050, host="127.0.0.1", max_attempts=20):
