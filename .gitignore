@@ -8,3 +8,6 @@ venv/
 runs/
 checkpoints/
 *.pt
+
+# macOS
+.DS_Store
