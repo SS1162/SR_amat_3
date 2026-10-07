@@ -3,9 +3,12 @@ import socket
 from dash import Dash
 import dash_bootstrap_components as dbc
 
-from spfi_ui.callbacks import register_callbacks
+from spfi_ui.callbacks import register_app_callbacks
 from spfi_ui.config import APP_NAME
+from spfi_ui.inference.callbacks import register_inference_callbacks
 from spfi_ui.layout import build_layout
+from spfi_ui.tensorboard.callbacks import register_tensorboard_callbacks
+from spfi_ui.training.callbacks import register_training_callbacks
 
 
 app = Dash(
@@ -17,7 +20,10 @@ app = Dash(
 server = app.server
 
 app.layout = build_layout()
-register_callbacks(app)
+register_app_callbacks(app)
+register_training_callbacks(app)
+register_inference_callbacks(app)
+register_tensorboard_callbacks(app)
 
 
 def _available_port(start_port=8050, host="127.0.0.1", max_attempts=20):

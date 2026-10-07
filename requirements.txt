@@ -1,0 +1,21 @@
+# SPFI super-resolution: model + training (algo/) and the Dash UI (ui/)
+#
+#   pip install -r requirements.txt
+#
+# torch / torchvision: the default pip wheels are CPU-only on Windows. For a GPU, install
+# them first from https://pytorch.org/get-started/locally/ (pick your CUDA version),
+# then run the command above.
+
+# --- model and training (algo/) ---
+torch>=2.11
+torchvision>=0.26
+pytorch_wavelets>=1.3
+PyWavelets>=1.6          # used by pytorch_wavelets but not installed by it
+setuptools<81            # pytorch_wavelets still imports pkg_resources
+numpy>=1.26
+Pillow>=10.0
+
+# --- UI (ui/) ---
+dash>=3.0
+dash-bootstrap-components>=2.0
+plotly>=5.20

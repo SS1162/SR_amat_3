@@ -37,14 +37,17 @@ def upload_box(component_id, title, helper, icon="↥", accept="image/*", multip
     )
 
 
-def metric_card(label, value, hint, accent="cyan"):
+def metric_card(label, value, hint, accent="cyan", element_id=None):
+    """With ``element_id``, the value and hint get ids ``<element_id>-value`` / ``<element_id>-hint``."""
+    value_props = {"id": f"{element_id}-value"} if element_id else {}
+    hint_props = {"id": f"{element_id}-hint"} if element_id else {}
     return dbc.Card(
         className=f"metric-card metric-{accent}",
         children=dbc.CardBody(
             [
                 html.Div(label, className="metric-label"),
-                html.Div(value, className="metric-value"),
-                html.Div(hint, className="metric-hint"),
+                html.Div(value, className="metric-value", **value_props),
+                html.Div(hint, className="metric-hint", **hint_props),
             ]
         ),
     )
@@ -93,84 +96,6 @@ def topbar():
         ],
     )
 
-
-def training_controls():
-    return dbc.Card(
-        className="panel-card controls-card",
-        children=dbc.CardBody(
-            [
-                html.Div("Run configuration", className="card-kicker"),
-                html.H4("Training controls", className="card-title"),
-                html.P(
-                    "Configure the run, choose where artifacts will be saved, and start or stop training.",
-                    className="card-copy",
-                ),
-                html.Div(
-                    [
-                        html.Label("Output directory", className="field-label"),
-                        dbc.InputGroup(
-                            [
-                                dbc.Input(
-                                    id="output-path",
-                                    placeholder="/runs/experiment_001",
-                                    value="/runs/experiment_001",
-                                    className="soft-input",
-                                ),
-                                dbc.Button("Select Routing", id="choose-output", className="input-button", n_clicks=0),
-                            ],
-                            className="mb-3",
-                        ),
-                        html.Div(
-                            "Click Select Routing to open folders on your computer and choose the directory you want.",
-                            className="field-feedback",
-                        ),
-                        html.Div(id="output-path-feedback", className="field-feedback"),
-                    ]
-                ),
-                html.Div(
-                    [
-                        html.Label("Run name", className="field-label"),
-                        dbc.Input(id="run-name", value="spfi_baseline_01", className="soft-input mb-3"),
-                    ]
-                ),
-                html.Div(
-                    [
-                        html.Label("Compute device", className="field-label"),
-                        dbc.Select(
-                            id="device-select",
-                            options=[
-                                {"label": "Auto", "value": "auto"},
-                                {"label": "CUDA / GPU", "value": "cuda"},
-                                {"label": "CPU", "value": "cpu"},
-                            ],
-                            value="auto",
-                            className="soft-input mb-4",
-                        ),
-                    ]
-                ),
-                html.Div(
-                    className="action-stack",
-                    children=[
-                        dbc.Button("Start training", id="start-training", className="primary-action", n_clicks=0),
-                        dbc.Button("Stop", id="stop-training", className="danger-action", n_clicks=0, disabled=True),
-                    ],
-                ),
-                html.Div(
-                    className="run-status-block",
-                    children=[
-                        html.Div(
-                            [html.Span("Run status", className="field-label"), status_pill("Idle", "muted", "train-status")],
-                            className="status-line",
-                        ),
-                        dbc.Progress(id="train-progress", value=0, className="train-progress", striped=False),
-                        html.Div("No active training run", id="train-status-copy", className="status-copy"),
-                    ],
-                ),
-            ]
-        ),
-    )
-
-
 def image_preview_card(title, image_id, empty_copy):
     return dbc.Card(
         className="panel-card preview-card h-100",
@@ -188,3 +113,25 @@ def image_preview_card(title, image_id, empty_copy):
             ]
         ),
     )
+
+
+def upload_chip(contents, filename):
+    if not contents:
+        return None
+    return html.Div(
+        [html.Span("✓", className="file-check"), html.Span(filename or "Uploaded file", className="file-name")],
+        className="file-chip",
+    )
+
+
+def summarize_uploads(*uploads):
+    """uploads: (contents, filenames) pairs from multi-file dcc.Upload components."""
+    items = []
+    for contents, names in uploads:
+        if not contents:
+            continue
+        if isinstance(contents, str):
+            contents, names = [contents], [names]
+        names = names or [None] * len(contents)
+        items.extend(upload_chip(content, name) for content, name in zip(contents, names))
+    return items or "No files selected yet."
