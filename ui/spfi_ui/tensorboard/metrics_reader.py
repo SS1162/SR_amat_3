@@ -10,7 +10,7 @@ Run folder format:
 No Dash code here: the TensorBoard page calls these functions and only handles display.
 
 Quick check from the ui/ folder:
-    python -m spfi_ui.metrics_reader fake_run
+    python -m spfi_ui.tensorboard.metrics_reader fake_run
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from typing import NamedTuple
 import numpy as np
 from PIL import Image
 
-from .config import RUNS_DIR
+from ..config import RUNS_DIR
 
 _ITER_RE = re.compile(r"^sample_(\d+)_iter(\d{7})\.png$")
 

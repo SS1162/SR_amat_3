@@ -15,7 +15,7 @@ from dash.exceptions import PreventUpdate
 from PIL import Image
 
 from . import metrics_reader as mr
-from .tensorboard_page import IMAGE_TILES, empty_figure
+from .page import IMAGE_TILES, empty_figure
 
 TAB_ID = "tensorboard"
 MAX_RAW_POINTS = 3000          # thin out the raw train curve beyond this many points

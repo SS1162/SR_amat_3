@@ -1,7 +1,82 @@
-from dash import html
+from dash import dcc, html
 import dash_bootstrap_components as dbc
 
-from .components import image_preview_card, metric_card, section_header, status_pill, training_controls, upload_box
+from ..components import metric_card, section_header, status_pill, upload_box
+
+
+def training_controls(prefix="", run_name="spfi_baseline_01", title="Training controls"):
+    """Run controls; ``prefix`` keeps ids unique when the panel appears on more than one tab."""
+    return dbc.Card(
+        className="panel-card controls-card",
+        children=dbc.CardBody(
+            [
+                dcc.Interval(id=f"{prefix}train-poll-timer", interval=1000, n_intervals=0, disabled=True),
+                html.Div("Run configuration", className="card-kicker"),
+                html.H4(title, className="card-title"),
+                html.P(
+                    "Configure the run, choose where artifacts will be saved, and start or stop training.",
+                    className="card-copy",
+                ),
+                html.Div(
+                    [
+                        html.Label("Output directory", className="field-label"),
+                        dbc.InputGroup(
+                            [
+                                dbc.Input(
+                                    id=f"{prefix}output-path",
+                                    placeholder="runs",
+                                    value="runs",
+                                    className="soft-input",
+                                ),
+                                dbc.Button("Choose", id=f"{prefix}choose-output", className="input-button", n_clicks=0),
+                            ],
+                            className="mb-3",
+                        ),
+                    ]
+                ),
+                html.Div(
+                    [
+                        html.Label("Run name", className="field-label"),
+                        dbc.Input(id=f"{prefix}run-name", value=run_name, className="soft-input mb-3"),
+                    ]
+                ),
+                html.Div(
+                    [
+                        html.Label("Compute device", className="field-label"),
+                        dbc.Select(
+                            id=f"{prefix}device-select",
+                            options=[
+                                {"label": "Auto", "value": "auto"},
+                                {"label": "CUDA / GPU", "value": "cuda"},
+                                {"label": "CPU", "value": "cpu"},
+                            ],
+                            value="auto",
+                            className="soft-input mb-4",
+                        ),
+                    ]
+                ),
+                html.Div(
+                    className="action-stack",
+                    children=[
+                        dbc.Button("Start training", id=f"{prefix}start-training", className="primary-action", n_clicks=0),
+                        dbc.Button("Stop", id=f"{prefix}stop-training", className="danger-action", n_clicks=0, disabled=True),
+                        dbc.Button("Resume", id=f"{prefix}resume-training", className="resume-action d-none", n_clicks=0),
+                    ],
+                ),
+                html.Div(
+                    className="run-status-block",
+                    children=[
+                        html.Div(
+                            [html.Span("Run status", className="field-label"), status_pill("Idle", "muted", f"{prefix}train-status")],
+                            className="status-line",
+                        ),
+                        dbc.Progress(id=f"{prefix}train-progress", value=0, className="train-progress", striped=False),
+                        html.Div("No active training run", id=f"{prefix}train-status-copy", className="status-copy"),
+                    ],
+                ),
+            ]
+        ),
+    )
 
 
 def scratch_tab():
@@ -193,88 +268,3 @@ def training_page():
         ]
     )
 
-
-def inference_page():
-    return html.Div(
-        className="tab-content-wrap",
-        children=[
-            section_header(
-                "INFERENCE",
-                "Upscale new images with a trained model",
-                "Choose a checkpoint, provide one image or a batch, and inspect the high-resolution output in the same workspace.",
-                status_pill("Model not loaded", "muted", "inference-status"),
-            ),
-            dbc.Card(
-                className="panel-card mb-4",
-                children=dbc.CardBody(
-                    [
-                        html.Div("MODEL & INPUT", className="card-kicker"),
-                        dbc.Row(
-                            [
-                                dbc.Col(
-                                    [
-                                        html.Label("Trained model", className="field-label"),
-                                        dbc.InputGroup(
-                                            [
-                                                dbc.Input(id="model-path", placeholder="/models/spfi_model.pt", className="soft-input"),
-                                                dbc.Button("Choose model", id="choose-model", className="input-button"),
-                                            ]
-                                        ),
-                                    ],
-                                    lg=5,
-                                ),
-                                dbc.Col(
-                                    [
-                                        html.Label("Input mode", className="field-label"),
-                                        dbc.RadioItems(
-                                            id="input-mode",
-                                            options=[
-                                                {"label": "Single image", "value": "single"},
-                                                {"label": "Batch / folder", "value": "batch"},
-                                            ],
-                                            value="single",
-                                            inline=True,
-                                            className="mode-radio",
-                                        ),
-                                    ],
-                                    lg=4,
-                                ),
-                                dbc.Col(
-                                    dbc.Button("Run inference", id="run-inference", className="primary-action inference-btn", n_clicks=0),
-                                    lg=3,
-                                    className="d-flex align-items-end",
-                                ),
-                            ],
-                            className="g-4",
-                        ),
-                    ]
-                ),
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        dbc.Card(
-                            className="panel-card h-100",
-                            children=dbc.CardBody(
-                                [
-                                    html.Div("INPUT", className="card-kicker"),
-                                    upload_box(
-                                        "inference-upload",
-                                        "Image or image batch",
-                                        "Drop a file here or select from your computer",
-                                        icon="＋",
-                                        multiple=True,
-                                    ),
-                                    html.Div(id="inference-file-summary", className="upload-summary"),
-                                ]
-                            ),
-                        ),
-                        lg=4,
-                    ),
-                    dbc.Col(image_preview_card("Low-resolution input", "lr-preview", "Input preview will appear here"), lg=4),
-                    dbc.Col(image_preview_card("High-resolution result", "hr-preview", "Model output will appear here"), lg=4),
-                ],
-                className="g-4",
-            ),
-        ],
-    )

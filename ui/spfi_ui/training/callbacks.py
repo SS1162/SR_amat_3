@@ -1,30 +1,9 @@
 from pathlib import Path
 
-from dash import Input, Output, State, ctx, html
+from dash import Input, Output, State, ctx
 
-from .training_runner import RUN
-
-
-def _parse_upload(contents, filename):
-    if not contents:
-        return None
-    return html.Div(
-        [html.Span("✓", className="file-check"), html.Span(filename or "Uploaded file", className="file-name")],
-        className="file-chip",
-    )
-
-
-def _summarize_uploads(*uploads):
-    """uploads: (contents, filenames) pairs from multi-file dcc.Upload components."""
-    items = []
-    for contents, names in uploads:
-        if not contents:
-            continue
-        if isinstance(contents, str):
-            contents, names = [contents], [names]
-        names = names or [None] * len(contents)
-        items.extend(_parse_upload(content, name) for content, name in zip(contents, names))
-    return items or "No files selected yet."
+from ..components import summarize_uploads
+from .runner import RUN
 
 
 ACTIVE_STATES = ("preparing", "running", "stopping")
@@ -101,15 +80,8 @@ def _render_metrics(snap, mode):
             str(iteration), iter_hint, _format_elapsed(snap["elapsed"]), "Training time, excluding pauses")
 
 
-def _empty_preview(message):
-    return [
-        html.Div("▧", className="preview-placeholder-icon"),
-        html.Div(message, className="preview-placeholder-copy"),
-    ]
-
-
 def _register_training_panel(app, prefix, mode, image_upload, mask_upload, weights_input=None):
-    """Callbacks for one training-controls panel (see components.training_controls(prefix))."""
+    """Callbacks for one training-controls panel (see page.training_controls(prefix))."""
     p = prefix
     weights_state = [State(weights_input, "value")] if weights_input else []
 
@@ -169,7 +141,7 @@ def _register_training_panel(app, prefix, mode, image_upload, mask_upload, weigh
         return _render_metrics(RUN.snapshot(), mode)
 
 
-def register_callbacks(app):
+def register_training_callbacks(app):
     @app.callback(
         Output("train-upload-summary", "children"),
         Input("train-image-upload", "contents"),
@@ -178,7 +150,7 @@ def register_callbacks(app):
         State("mask-upload", "filename"),
     )
     def summarize_training_uploads(image_contents, mask_contents, image_names, mask_names):
-        return _summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
+        return summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
 
     @app.callback(
         Output("finetune-upload-summary", "children"),
@@ -188,61 +160,8 @@ def register_callbacks(app):
         State("finetune-mask-upload", "filename"),
     )
     def summarize_finetune_uploads(image_contents, mask_contents, image_names, mask_names):
-        return _summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
-
-    @app.callback(
-        Output("inference-file-summary", "children"),
-        Output("lr-preview", "children"),
-        Output("lr-preview", "className"),
-        Input("inference-upload", "contents"),
-        State("inference-upload", "filename"),
-    )
-    def show_inference_upload(contents, filenames):
-        if not contents:
-            return "No files selected yet.", _empty_preview("Input preview will appear here"), "image-preview empty-preview"
-
-        if isinstance(contents, str):
-            contents = [contents]
-        if filenames is None:
-            filenames = [None] * len(contents)
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        chips = [_parse_upload(content, filename) for content, filename in zip(contents, filenames)]
-        return chips, html.Img(src=contents[0], className="preview-image"), "image-preview"
+        return summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
 
     _register_training_panel(app, "", "scratch", "train-image-upload", "mask-upload")
     _register_training_panel(app, "ft-", "finetune", "finetune-data-upload", "finetune-mask-upload",
                              weights_input="ft-weights")
-
-    @app.callback(
-        Output("inference-status", "children"),
-        Output("inference-status", "className"),
-        Output("hr-preview", "children"),
-        Output("hr-preview", "className"),
-        Input("run-inference", "n_clicks"),
-        State("inference-upload", "contents"),
-        prevent_initial_call=True,
-    )
-    def demo_inference(n_clicks, contents):
-        if not contents:
-            return (
-                "Input required",
-                "status-pill status-warning",
-                _empty_preview("Upload an image before running inference"),
-                "image-preview empty-preview",
-            )
-
-        first = contents[0] if isinstance(contents, list) else contents
-        return (
-            "UI preview",
-            "status-pill status-success",
-            html.Div(
-                [
-                    html.Img(src=first, className="preview-image result-demo"),
-                    html.Div("Backend output placeholder", className="result-ribbon"),
-                ],
-                className="result-wrap",
-            ),
-            "image-preview",
-        )

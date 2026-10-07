@@ -1,14 +1,14 @@
 """TensorBoard tab: live monitoring of a training run.
 
 Layout only. Every element that will change at runtime has an id starting with "tb-";
-the callbacks that fill them live in tensorboard_callbacks.py (next step).
+the callbacks that fill them live in callbacks.py.
 """
 
 from dash import dcc, html
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-from .components import section_header, status_pill
+from ..components import section_header, status_pill
 
 REFRESH_MS = 2500
 PLAY_MS = 600

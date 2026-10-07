@@ -1,6 +1,6 @@
 """Run folder writer for the UI's TensorBoard page.
 
-Layout (read by ui/spfi_ui/metrics_reader.py; do not rename fields or files)::
+Layout (read by ui/spfi_ui/tensorboard/metrics_reader.py; do not rename fields or files)::
 
     <run_dir>/
     ├── meta.json        written once, before the first iteration
