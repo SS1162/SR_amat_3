@@ -32,6 +32,15 @@ def _directory_status(path_value):
 
 def register_callbacks(app):
     @app.callback(
+        Output("app-shell", "className"),
+        Input("theme-toggle", "value"),
+    )
+    def toggle_theme(theme_value):
+        if theme_value and "light" in theme_value:
+            return "app-shell theme-light"
+        return "app-shell theme-dark"
+
+    @app.callback(
         Output("train-upload-summary", "children"),
         Input("train-image-upload", "contents"),
         Input("mask-upload", "contents"),

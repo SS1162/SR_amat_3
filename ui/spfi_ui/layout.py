@@ -8,7 +8,8 @@ from .pages import inference_page, tensorboard_page, training_page
 
 def build_layout():
     return html.Div(
-        className="app-shell",
+        id="app-shell",
+        className="app-shell theme-dark",
         children=[
             dcc.Interval(id="fake-train-timer", interval=700, n_intervals=0, disabled=True),
             topbar(),
