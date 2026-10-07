@@ -28,10 +28,15 @@ def training_controls(prefix="", run_name="spfi_baseline_01", title="Training co
                                     value="runs",
                                     className="soft-input",
                                 ),
-                                dbc.Button("Choose", id=f"{prefix}choose-output", className="input-button", n_clicks=0),
+                                dbc.Button("Select Routing", id=f"{prefix}choose-output", className="input-button", n_clicks=0),
                             ],
                             className="mb-3",
                         ),
+                        html.Div(
+                            "Click Select Routing to open folders on your computer and choose the directory you want.",
+                            className="field-feedback",
+                        ),
+                        html.Div(id=f"{prefix}output-path-feedback", className="field-feedback"),
                     ]
                 ),
                 html.Div(
@@ -100,7 +105,7 @@ def scratch_tab():
                                         html.Div("01 · DATA", className="card-kicker"),
                                         html.H4("Training inputs", className="card-title"),
                                         html.P(
-                                            "Add the training images. Matching masks can be added optionally, using the same file names as the images.",
+                                            "Add the training images. Matching masks and an optional small image can be added using the same file names when needed.",
                                             className="card-copy",
                                         ),
                                         dbc.Row(
@@ -113,7 +118,7 @@ def scratch_tab():
                                                         icon="＋",
                                                         multiple=True,
                                                     ),
-                                                    md=6,
+                                                    md=4,
                                                 ),
                                                 dbc.Col(
                                                     upload_box(
@@ -123,7 +128,16 @@ def scratch_tab():
                                                         icon="◌",
                                                         multiple=True,
                                                     ),
-                                                    md=6,
+                                                    md=4,
+                                                ),
+                                                dbc.Col(
+                                                    upload_box(
+                                                        "train-small-image-upload",
+                                                        "Small image",
+                                                        "Optional small image input",
+                                                        icon="▣",
+                                                    ),
+                                                    md=4,
                                                 ),
                                             ],
                                             className="g-3",
@@ -210,7 +224,7 @@ def finetune_tab():
                                                 placeholder="runs/spfi_baseline_01/checkpoints/spfi_x4_best.pt",
                                                 className="soft-input",
                                             ),
-                                            dbc.Button("Choose", className="input-button"),
+                                            dbc.Button("Choose", id="choose-finetune-model", className="input-button"),
                                         ],
                                         className="mb-4",
                                     ),
@@ -224,7 +238,7 @@ def finetune_tab():
                                                     icon="＋",
                                                     multiple=True,
                                                 ),
-                                                md=6,
+                                                md=4,
                                             ),
                                             dbc.Col(
                                                 upload_box(
@@ -234,7 +248,16 @@ def finetune_tab():
                                                     icon="◌",
                                                     multiple=True,
                                                 ),
-                                                md=6,
+                                                md=4,
+                                            ),
+                                            dbc.Col(
+                                                upload_box(
+                                                    "finetune-small-image-upload",
+                                                    "Small image",
+                                                    "Optional small image for fine-tuning",
+                                                    icon="▣",
+                                                ),
+                                                md=4,
                                             ),
                                         ],
                                         className="g-3",
@@ -267,4 +290,3 @@ def training_page():
             )
         ]
     )
-

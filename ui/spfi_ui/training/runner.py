@@ -30,6 +30,26 @@ def _as_lists(contents, filenames):
     return list(contents), list(filenames or [None] * len(contents))
 
 
+def _normalize_run_dir(run_dir: Path) -> Path:
+    return run_dir if run_dir.is_absolute() else REPO_ROOT / run_dir
+
+
+def _validate_run_dir(run_dir: Path) -> Path:
+    run_dir = _normalize_run_dir(run_dir)
+    if run_dir.exists() and not run_dir.is_dir():
+        raise ValueError(f"Output path points to a file: {run_dir}")
+
+    output_dir = run_dir.parent
+    if output_dir.exists() and not output_dir.is_dir():
+        raise ValueError(f"Output directory points to a file: {output_dir}")
+
+    parent_dir = output_dir if output_dir.exists() else output_dir.parent
+    if not parent_dir.exists() or not parent_dir.is_dir():
+        raise ValueError(f"Parent directory does not exist: {parent_dir}")
+
+    return run_dir
+
+
 def _save_uploads(contents, filenames, folder: Path) -> list[str]:
     """Decode dcc.Upload data URLs and save each one as <stem>.png. Returns the stems."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -86,9 +106,7 @@ class TrainingRun:
             if len(images) < MIN_IMAGES:
                 raise ValueError(f"Upload at least {MIN_IMAGES} training images")
 
-            run_dir = Path(run_dir)
-            if not run_dir.is_absolute():
-                run_dir = REPO_ROOT / run_dir   # "runs" = <repo>/runs, where the TensorBoard page looks
+            run_dir = _validate_run_dir(Path(run_dir))
             data_dir = run_dir / "data"
             if data_dir.exists():
                 raise ValueError(f"'{run_dir}' already has data; choose another run name")

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from dash import Input, Output, State, ctx
 
+from ..callbacks import choose_file, choose_folder, output_directory_feedback
 from ..components import summarize_uploads
 from .runner import RUN
 
@@ -143,24 +144,86 @@ def _register_training_panel(app, prefix, mode, image_upload, mask_upload, weigh
 
 def register_training_callbacks(app):
     @app.callback(
+        Output("output-path", "value"),
+        Input("choose-output", "n_clicks"),
+        State("output-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_training_output_directory(n_clicks, current_value):
+        selected = choose_folder("Select Routing folder")
+        return selected if selected else current_value
+
+    @app.callback(
+        Output("ft-output-path", "value"),
+        Input("ft-choose-output", "n_clicks"),
+        State("ft-output-path", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_finetune_output_directory(n_clicks, current_value):
+        selected = choose_folder("Select Routing folder")
+        return selected if selected else current_value
+
+    @app.callback(
+        Output("ft-weights", "value"),
+        Input("choose-finetune-model", "n_clicks"),
+        State("ft-weights", "value"),
+        prevent_initial_call=True,
+    )
+    def choose_finetune_model_file(n_clicks, current_value):
+        selected = choose_file("Select fine-tuning model file")
+        return selected if selected else current_value
+
+    @app.callback(
+        Output("output-path", "className"),
+        Output("output-path-feedback", "children"),
+        Output("output-path-feedback", "className"),
+        Input("output-path", "value"),
+    )
+    def validate_training_output_path(path_value):
+        _valid, input_class, feedback, feedback_class = output_directory_feedback(path_value)
+        return input_class, feedback, feedback_class
+
+    @app.callback(
+        Output("ft-output-path", "className"),
+        Output("ft-output-path-feedback", "children"),
+        Output("ft-output-path-feedback", "className"),
+        Input("ft-output-path", "value"),
+    )
+    def validate_finetune_output_path(path_value):
+        _valid, input_class, feedback, feedback_class = output_directory_feedback(path_value)
+        return input_class, feedback, feedback_class
+
+    @app.callback(
         Output("train-upload-summary", "children"),
         Input("train-image-upload", "contents"),
         Input("mask-upload", "contents"),
+        Input("train-small-image-upload", "contents"),
         State("train-image-upload", "filename"),
         State("mask-upload", "filename"),
+        State("train-small-image-upload", "filename"),
     )
-    def summarize_training_uploads(image_contents, mask_contents, image_names, mask_names):
-        return summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
+    def summarize_training_uploads(image_contents, mask_contents, small_contents, image_names, mask_names, small_names):
+        return summarize_uploads(
+            (image_contents, image_names),
+            (mask_contents, mask_names),
+            (small_contents, small_names),
+        )
 
     @app.callback(
         Output("finetune-upload-summary", "children"),
         Input("finetune-data-upload", "contents"),
         Input("finetune-mask-upload", "contents"),
+        Input("finetune-small-image-upload", "contents"),
         State("finetune-data-upload", "filename"),
         State("finetune-mask-upload", "filename"),
+        State("finetune-small-image-upload", "filename"),
     )
-    def summarize_finetune_uploads(image_contents, mask_contents, image_names, mask_names):
-        return summarize_uploads((image_contents, image_names), (mask_contents, mask_names))
+    def summarize_finetune_uploads(image_contents, mask_contents, small_contents, image_names, mask_names, small_names):
+        return summarize_uploads(
+            (image_contents, image_names),
+            (mask_contents, mask_names),
+            (small_contents, small_names),
+        )
 
     _register_training_panel(app, "", "scratch", "train-image-upload", "mask-upload")
     _register_training_panel(app, "ft-", "finetune", "finetune-data-upload", "finetune-mask-upload",

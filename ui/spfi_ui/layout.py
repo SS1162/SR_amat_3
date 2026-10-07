@@ -10,7 +10,8 @@ from .training.page import training_page
 
 def build_layout():
     return html.Div(
-        className="app-shell",
+        id="app-shell",
+        className="app-shell theme-dark",
         children=[
             topbar(),
             html.Main(

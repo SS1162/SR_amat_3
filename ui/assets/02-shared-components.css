@@ -1,5 +1,5 @@
 .panel-card, .metric-card {
-    background: linear-gradient(180deg, rgba(16, 32, 54, .96), rgba(11, 25, 43, .91));
+    background: linear-gradient(180deg, var(--panel-grad-start), var(--panel-grad-end));
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -11,23 +11,34 @@
 .card-copy { color: var(--muted); line-height: 1.6; font-size: 13.5px; }
 
 .field-label { display: block; color: var(--soft); font-size: 12px; font-weight: 700; margin-bottom: 7px; }
+.field-feedback { min-height: 18px; margin-top: 6px; font-size: 11px; }
+.field-feedback-valid { color: #93f2cf; }
+.field-feedback-invalid { color: #ff9bac; }
 .form-control.soft-input, .form-select.soft-input, .soft-input.form-control, .soft-input.form-select {
-    background: rgba(2, 12, 23, .46) !important;
+    background: var(--input-bg) !important;
     border: 1px solid var(--border) !important;
     color: var(--text) !important;
     min-height: 44px;
     box-shadow: none !important;
 }
 .form-control.soft-input:focus, .form-select.soft-input:focus { border-color: rgba(84,215,255,.5) !important; }
+.form-control.soft-input.is-valid, .soft-input.form-control.is-valid {
+    border-color: rgba(102,226,176,.55) !important;
+    box-shadow: 0 0 0 .2rem rgba(102,226,176,.08) !important;
+}
+.form-control.soft-input.is-invalid, .soft-input.form-control.is-invalid {
+    border-color: rgba(255,113,139,.55) !important;
+    box-shadow: 0 0 0 .2rem rgba(255,113,139,.08) !important;
+}
 .form-control::placeholder { color: #60738b !important; }
-.form-select { background-color: rgba(2,12,23,.46); color: var(--text); }
+.form-select { background-color: var(--input-bg); color: var(--text); }
 .input-button, .ghost-btn {
     border: 1px solid var(--border) !important;
-    background: rgba(255,255,255,.035) !important;
+    background: var(--ghost-bg) !important;
     color: var(--soft) !important;
     font-weight: 700;
 }
-.input-button:hover, .ghost-btn:hover { color: var(--text) !important; border-color: rgba(84,215,255,.34) !important; background: rgba(84,215,255,.07) !important; }
+.input-button:hover, .ghost-btn:hover { color: var(--text) !important; border-color: rgba(84,215,255,.34) !important; background: var(--ghost-hover-bg) !important; }
 
 .primary-action, .danger-action, .resume-action, .disabled-action {
     min-height: 46px;

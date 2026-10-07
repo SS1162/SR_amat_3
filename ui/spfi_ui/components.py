@@ -83,12 +83,18 @@ def topbar():
                         [html.Span(className="live-dot"), html.Span("Workspace ready")],
                         className="workspace-state",
                     ),
+                    dbc.Checklist(
+                        id="theme-toggle",
+                        options=[{"label": "Light mode", "value": "light"}],
+                        value=[],
+                        switch=True,
+                        className="theme-toggle",
+                    ),
                     dbc.Button("Documentation", color="light", outline=True, className="ghost-btn"),
                 ],
             ),
         ],
     )
-
 
 def image_preview_card(title, image_id, empty_copy):
     return dbc.Card(
