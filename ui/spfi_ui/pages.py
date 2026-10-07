@@ -25,7 +25,7 @@ def scratch_tab():
                                         html.Div("01 · DATA", className="card-kicker"),
                                         html.H4("Training inputs", className="card-title"),
                                         html.P(
-                                            "Add the source image. A matching mask can be provided when the training sample requires one.",
+                                            "Add the training images. Matching masks can be added optionally, using the same file names as the images.",
                                             className="card-copy",
                                         ),
                                         dbc.Row(
@@ -33,18 +33,20 @@ def scratch_tab():
                                                 dbc.Col(
                                                     upload_box(
                                                         "train-image-upload",
-                                                        "Source image",
-                                                        "PNG, JPG, TIFF · required",
+                                                        "Training images",
+                                                        "PNG · required",
                                                         icon="＋",
+                                                        multiple=True,
                                                     ),
                                                     md=6,
                                                 ),
                                                 dbc.Col(
                                                     upload_box(
                                                         "mask-upload",
-                                                        "Optional mask",
-                                                        "Matching mask for the source image",
+                                                        "Optional masks",
+                                                        "Same file names as the images",
                                                         icon="◌",
+                                                        multiple=True,
                                                     ),
                                                     md=6,
                                                 ),
@@ -89,15 +91,19 @@ def scratch_tab():
                 ],
                 className="g-4",
             ),
-            html.Div(
-                className="metrics-grid mt-4",
-                children=[
-                    metric_card("Training loss", "—", "Available when a run begins", "cyan"),
-                    metric_card("Validation metric", "—", "Connect to your backend metric", "violet"),
-                    metric_card("Epoch", "0", "Current / total epochs", "green"),
-                    metric_card("Elapsed", "00:00", "Runtime of active experiment", "amber"),
-                ],
-            ),
+            training_metrics(),
+        ],
+    )
+
+
+def training_metrics(prefix=""):
+    return html.Div(
+        className="metrics-grid mt-4",
+        children=[
+            metric_card("Training loss", "—", "Available when a run begins", "cyan", f"{prefix}metric-loss"),
+            metric_card("Validation PSNR", "—", "Available after the first checkpoint", "violet", f"{prefix}metric-val"),
+            metric_card("Iteration", "0", "No active training run", "green", f"{prefix}metric-iter"),
+            metric_card("Elapsed", "00:00", "Training time, excluding pauses", "amber", f"{prefix}metric-elapsed"),
         ],
     )
 
@@ -109,8 +115,8 @@ def finetune_tab():
             section_header(
                 "TRAINING / FINE-TUNING",
                 "Continue from an existing model",
-                "The interface is already prepared for the future fine-tuning flow, while keeping it visually separate from training from scratch.",
-                status_pill("Planned", "warning"),
+                "Load a trained checkpoint and keep training it on new images. The original checkpoint is not changed.",
+                status_pill("Ready", "success"),
             ),
             dbc.Row(
                 [
@@ -124,7 +130,11 @@ def finetune_tab():
                                     html.P("Choose the model that will be used as the starting point for fine-tuning.", className="card-copy"),
                                     dbc.InputGroup(
                                         [
-                                            dbc.Input(placeholder="/models/spfi_checkpoint.pt", className="soft-input"),
+                                            dbc.Input(
+                                                id="ft-weights",
+                                                placeholder="runs/spfi_baseline_01/checkpoints/spfi_x4_best.pt",
+                                                className="soft-input",
+                                            ),
                                             dbc.Button("Choose", className="input-button"),
                                         ],
                                         className="mb-4",
@@ -160,35 +170,11 @@ def finetune_tab():
                         ),
                         lg=8,
                     ),
-                    dbc.Col(
-                        dbc.Card(
-                            className="panel-card future-card",
-                            children=dbc.CardBody(
-                                [
-                                    html.Div("COMING NEXT", className="card-kicker"),
-                                    html.H4("Fine-tuning engine", className="card-title"),
-                                    html.P(
-                                        "This area is intentionally present in the product now, so adding the backend later does not require redesigning the training experience.",
-                                        className="card-copy",
-                                    ),
-                                    html.Div(
-                                        [
-                                            html.Span("Checkpoint loading", className="feature-chip"),
-                                            html.Span("Freeze strategy", className="feature-chip"),
-                                            html.Span("Learning-rate override", className="feature-chip"),
-                                            html.Span("Resume tracking", className="feature-chip"),
-                                        ],
-                                        className="feature-chip-wrap",
-                                    ),
-                                    dbc.Button("Fine-tuning not enabled yet", disabled=True, className="disabled-action mt-4"),
-                                ]
-                            ),
-                        ),
-                        lg=4,
-                    ),
+                    dbc.Col(training_controls("ft-", "spfi_finetune_01", "Fine-tuning controls"), lg=4),
                 ],
                 className="g-4",
             ),
+            training_metrics("ft-"),
         ],
     )
 

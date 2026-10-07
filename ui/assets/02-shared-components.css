@@ -48,6 +48,7 @@
 .status-muted { color: #a4b2c5; background: rgba(166,184,207,.07); border-color: rgba(166,184,207,.10); }
 .status-success { color: #93f2cf; background: rgba(102,226,176,.08); border-color: rgba(102,226,176,.15); }
 .status-warning { color: #ffd899; background: rgba(255,202,117,.08); border-color: rgba(255,202,117,.15); }
+.status-danger { color: #ff9bac; background: rgba(255,113,139,.08); border-color: rgba(255,113,139,.15); }
 
 @media (max-width: 650px) {
     .action-stack { grid-template-columns: 1fr; }

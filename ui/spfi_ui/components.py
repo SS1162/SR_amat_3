@@ -37,14 +37,17 @@ def upload_box(component_id, title, helper, icon="↥", accept="image/*", multip
     )
 
 
-def metric_card(label, value, hint, accent="cyan"):
+def metric_card(label, value, hint, accent="cyan", element_id=None):
+    """With ``element_id``, the value and hint get ids ``<element_id>-value`` / ``<element_id>-hint``."""
+    value_props = {"id": f"{element_id}-value"} if element_id else {}
+    hint_props = {"id": f"{element_id}-hint"} if element_id else {}
     return dbc.Card(
         className=f"metric-card metric-{accent}",
         children=dbc.CardBody(
             [
                 html.Div(label, className="metric-label"),
-                html.Div(value, className="metric-value"),
-                html.Div(hint, className="metric-hint"),
+                html.Div(value, className="metric-value", **value_props),
+                html.Div(hint, className="metric-hint", **hint_props),
             ]
         ),
     )
@@ -87,13 +90,15 @@ def topbar():
     )
 
 
-def training_controls():
+def training_controls(prefix="", run_name="spfi_baseline_01", title="Training controls"):
+    """Run controls; ``prefix`` keeps ids unique when the panel appears on more than one tab."""
     return dbc.Card(
         className="panel-card controls-card",
         children=dbc.CardBody(
             [
+                dcc.Interval(id=f"{prefix}train-poll-timer", interval=1000, n_intervals=0, disabled=True),
                 html.Div("Run configuration", className="card-kicker"),
-                html.H4("Training controls", className="card-title"),
+                html.H4(title, className="card-title"),
                 html.P(
                     "Configure the run, choose where artifacts will be saved, and start or stop training.",
                     className="card-copy",
@@ -104,12 +109,12 @@ def training_controls():
                         dbc.InputGroup(
                             [
                                 dbc.Input(
-                                    id="output-path",
-                                    placeholder="/runs/experiment_001",
-                                    value="/runs/experiment_001",
+                                    id=f"{prefix}output-path",
+                                    placeholder="runs",
+                                    value="runs",
                                     className="soft-input",
                                 ),
-                                dbc.Button("Choose", id="choose-output", className="input-button", n_clicks=0),
+                                dbc.Button("Choose", id=f"{prefix}choose-output", className="input-button", n_clicks=0),
                             ],
                             className="mb-3",
                         ),
@@ -118,14 +123,14 @@ def training_controls():
                 html.Div(
                     [
                         html.Label("Run name", className="field-label"),
-                        dbc.Input(id="run-name", value="spfi_baseline_01", className="soft-input mb-3"),
+                        dbc.Input(id=f"{prefix}run-name", value=run_name, className="soft-input mb-3"),
                     ]
                 ),
                 html.Div(
                     [
                         html.Label("Compute device", className="field-label"),
                         dbc.Select(
-                            id="device-select",
+                            id=f"{prefix}device-select",
                             options=[
                                 {"label": "Auto", "value": "auto"},
                                 {"label": "CUDA / GPU", "value": "cuda"},
@@ -139,20 +144,20 @@ def training_controls():
                 html.Div(
                     className="action-stack",
                     children=[
-                        dbc.Button("Start training", id="start-training", className="primary-action", n_clicks=0),
-                        dbc.Button("Stop", id="stop-training", className="danger-action", n_clicks=0, disabled=True),
-                        dbc.Button("Resume", id="resume-training", className="resume-action d-none", n_clicks=0),
+                        dbc.Button("Start training", id=f"{prefix}start-training", className="primary-action", n_clicks=0),
+                        dbc.Button("Stop", id=f"{prefix}stop-training", className="danger-action", n_clicks=0, disabled=True),
+                        dbc.Button("Resume", id=f"{prefix}resume-training", className="resume-action d-none", n_clicks=0),
                     ],
                 ),
                 html.Div(
                     className="run-status-block",
                     children=[
                         html.Div(
-                            [html.Span("Run status", className="field-label"), status_pill("Idle", "muted", "train-status")],
+                            [html.Span("Run status", className="field-label"), status_pill("Idle", "muted", f"{prefix}train-status")],
                             className="status-line",
                         ),
-                        dbc.Progress(id="train-progress", value=0, className="train-progress", striped=False),
-                        html.Div("No active training run", id="train-status-copy", className="status-copy"),
+                        dbc.Progress(id=f"{prefix}train-progress", value=0, className="train-progress", striped=False),
+                        html.Div("No active training run", id=f"{prefix}train-status-copy", className="status-copy"),
                     ],
                 ),
             ]
