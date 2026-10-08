@@ -1,10 +1,13 @@
 import threading
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from spfi_ui.training import runner
-from spfi_ui.training.runner import MIN_IMAGES, TrainingRun, _as_lists, _save_uploads
+from spfi_ui.training.runner import (
+    MIN_IMAGES, TrainingRun, _as_lists, _normalize_run_dir, _save_uploads, _validate_run_dir,
+)
 
 from .helpers import FakeTrainer, png_data_url, wait_for
 
@@ -32,6 +35,52 @@ class TestAsLists:
 
     def test_missing_filenames_become_none(self):
         assert _as_lists(("x", "y"), None) == (["x", "y"], [None, None])
+
+
+# ------------------------------------------------- _normalize_run_dir / _validate_run_dir
+
+class TestRunDir:
+    def test_absolute_path_is_kept(self, tmp_path):
+        assert _normalize_run_dir(tmp_path / "x") == tmp_path / "x"
+
+    def test_relative_path_is_under_repo_root(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
+        assert _normalize_run_dir(Path("runs") / "x") == tmp_path / "runs" / "x"
+
+    def test_new_run_in_existing_output_dir(self, tmp_path):
+        assert _validate_run_dir(tmp_path / "run") == tmp_path / "run"
+
+    def test_existing_run_dir(self, tmp_path):
+        (tmp_path / "run").mkdir()
+        assert _validate_run_dir(tmp_path / "run") == tmp_path / "run"
+
+    def test_output_dir_may_be_created_one_level_deep(self, tmp_path):
+        assert _validate_run_dir(tmp_path / "new_output" / "run") == tmp_path / "new_output" / "run"
+
+    def test_relative_is_normalized(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
+        assert _validate_run_dir(Path("runs") / "x") == tmp_path / "runs" / "x"
+
+    def test_run_dir_is_a_file(self, tmp_path):
+        (tmp_path / "run").write_text("x")
+        with pytest.raises(ValueError, match="Output path points to a file"):
+            _validate_run_dir(tmp_path / "run")
+
+    def test_output_dir_is_a_file(self, tmp_path):
+        (tmp_path / "out").write_text("x")
+        with pytest.raises(ValueError, match="Output directory points to a file"):
+            _validate_run_dir(tmp_path / "out" / "run")
+
+    def test_missing_grandparent(self, tmp_path):
+        with pytest.raises(ValueError, match="Parent directory does not exist"):
+            _validate_run_dir(tmp_path / "a" / "b" / "run")
+
+    def test_start_rejects_invalid_run_dir_before_saving(self, tmp_path, training_run):
+        contents, names = _uploads("a.png", "b.png")
+        with pytest.raises(ValueError, match="Parent directory does not exist"):
+            training_run.start(contents, names, None, None, tmp_path / "a" / "b" / "run", "cpu")
+        assert not (tmp_path / "a").exists()
+        assert training_run.state == "idle"
 
 
 # ------------------------------------------------------------ _save_uploads

@@ -29,7 +29,7 @@ def by_id(component, element_id):
     return matches[0]
 
 
-CONTROL_IDS = ["train-poll-timer", "output-path", "choose-output", "run-name", "device-select",
+CONTROL_IDS = ["train-poll-timer", "output-path", "choose-output", "output-path-feedback", "run-name", "device-select",
                "start-training", "stop-training", "resume-training", "train-status", "train-progress",
                "train-status-copy"]
 METRIC_IDS = [f"metric-{name}-{part}" for name in ("loss", "val", "iter", "elapsed") for part in ("value", "hint")]
@@ -47,6 +47,8 @@ class TestTrainingControls:
         assert by_id(panel, "device-select").value == "auto"
         assert [o["value"] for o in by_id(panel, "device-select").options] == ["auto", "cuda", "cpu"]
         assert "Training controls" in [c.children for c in walk(panel) if type(c).__name__ == "H4"]
+        assert by_id(panel, "choose-output").children == "Select Routing"
+        assert by_id(panel, "output-path-feedback").children is None
 
     def test_custom_run_name_and_title(self):
         panel = training_controls("ft-", "my_run", "Fine-tuning controls")
@@ -81,13 +83,14 @@ class TestTrainingMetrics:
 class TestTabs:
     def test_scratch_tab_has_uploads_controls_and_metrics(self):
         found = set(ids(scratch_tab()))
-        assert {"train-image-upload", "mask-upload", "train-upload-summary"} <= found
+        assert {"train-image-upload", "mask-upload", "train-small-image-upload", "train-upload-summary"} <= found
         assert set(CONTROL_IDS) <= found and set(METRIC_IDS) <= found
 
     def test_finetune_tab_has_weights_uploads_and_prefixed_ids(self):
         tab = finetune_tab()
         found = set(ids(tab))
-        assert {"ft-weights", "finetune-data-upload", "finetune-mask-upload", "finetune-upload-summary"} <= found
+        assert {"ft-weights", "choose-finetune-model", "finetune-data-upload", "finetune-mask-upload",
+                "finetune-small-image-upload", "finetune-upload-summary"} <= found
         assert {f"ft-{i}" for i in CONTROL_IDS + METRIC_IDS} <= found
         assert by_id(tab, "ft-run-name").value == "spfi_finetune_01"
 
@@ -95,6 +98,8 @@ class TestTabs:
         page = training_page()
         for upload_id in ("train-image-upload", "mask-upload", "finetune-data-upload", "finetune-mask-upload"):
             assert by_id(page, upload_id).multiple is True
+        for upload_id in ("train-small-image-upload", "finetune-small-image-upload"):
+            assert not by_id(page, upload_id).multiple
 
     def test_training_page_ids_are_unique(self):
         duplicates = [i for i, n in Counter(ids(training_page())).items() if n > 1]
