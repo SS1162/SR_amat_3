@@ -16,6 +16,23 @@
     --danger: #ff718b;
     --shadow: 0 20px 55px rgba(0, 0, 0, 0.22);
     --radius: 22px;
+
+    --bg-radial-a: rgba(84, 215, 255, 0.10);
+    --bg-radial-b: rgba(168, 134, 255, 0.08);
+    --bg-linear-start: #07111f;
+    --bg-linear-mid: #08131f;
+    --bg-linear-end: #060d18;
+    --grid-line: rgba(255,255,255,.025);
+    --panel-grad-start: rgba(16, 32, 54, .96);
+    --panel-grad-end: rgba(11, 25, 43, .91);
+    --topbar-bg: rgba(6, 15, 27, 0.78);
+    --tabs-bg: rgba(13, 28, 47, 0.76);
+    --input-bg: rgba(2, 12, 23, .46);
+    --ghost-bg: rgba(255,255,255,.035);
+    --ghost-hover-bg: rgba(84,215,255,.07);
+    --upload-bg: rgba(84, 215, 255, .025);
+    --upload-hover-bg: rgba(84, 215, 255, .055);
+    --preview-bg: #050b13;
 }
 
 * { box-sizing: border-box; }
@@ -25,25 +42,68 @@ html, body, #react-entry-point, #_dash-app-content {
     background: var(--bg);
 }
 
+.app-shell {
+    min-height: 100vh;
+}
+
 body {
     margin: 0;
     font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    color: var(--text);
-    background:
-        radial-gradient(circle at 10% 8%, rgba(84, 215, 255, 0.10), transparent 26%),
-        radial-gradient(circle at 88% 4%, rgba(168, 134, 255, 0.08), transparent 24%),
-        linear-gradient(180deg, #07111f 0%, #08131f 55%, #060d18 100%);
 }
 
-body::before {
+.app-shell {
+    color: var(--text);
+    background:
+        radial-gradient(circle at 10% 8%, var(--bg-radial-a), transparent 26%),
+        radial-gradient(circle at 88% 4%, var(--bg-radial-b), transparent 24%),
+        linear-gradient(180deg, var(--bg-linear-start) 0%, var(--bg-linear-mid) 55%, var(--bg-linear-end) 100%);
+}
+
+.app-shell::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     opacity: .23;
     background-image:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 42px 42px;
     mask-image: linear-gradient(to bottom, black, transparent 75%);
+}
+
+.app-shell.theme-light {
+    --bg: #f4f7fc;
+    --bg-2: #eaf0f8;
+    --panel: rgba(255, 255, 255, 0.95);
+    --panel-strong: #f6faff;
+    --border: rgba(94, 121, 156, 0.22);
+    --border-strong: rgba(30, 132, 211, 0.32);
+    --text: #11243a;
+    --muted: #5a6f88;
+    --soft: #2f4a68;
+    --cyan: #1e8bd2;
+    --cyan-2: #1b79ba;
+    --violet: #7b66d4;
+    --green: #2bb383;
+    --amber: #be8a37;
+    --danger: #d85572;
+    --shadow: 0 16px 38px rgba(26, 53, 88, 0.10);
+
+    --bg-radial-a: rgba(87, 169, 255, 0.12);
+    --bg-radial-b: rgba(155, 133, 245, 0.10);
+    --bg-linear-start: #f7faff;
+    --bg-linear-mid: #f3f7fc;
+    --bg-linear-end: #edf3fa;
+    --grid-line: rgba(14, 45, 87, 0.045);
+    --panel-grad-start: rgba(255, 255, 255, .96);
+    --panel-grad-end: rgba(241, 247, 255, .93);
+    --topbar-bg: rgba(247, 251, 255, 0.88);
+    --tabs-bg: rgba(239, 245, 253, 0.92);
+    --input-bg: rgba(250, 253, 255, 0.97);
+    --ghost-bg: rgba(30, 103, 172, 0.08);
+    --ghost-hover-bg: rgba(30, 139, 210, 0.14);
+    --upload-bg: rgba(30, 139, 210, .05);
+    --upload-hover-bg: rgba(30, 139, 210, .10);
+    --preview-bg: #edf3fb;
 }

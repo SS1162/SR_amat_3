@@ -1,5 +1,3 @@
-.app-shell { min-height: 100vh; }
-
 .topbar {
     min-height: 82px;
     display: flex;
@@ -7,7 +5,7 @@
     justify-content: space-between;
     padding: 16px 4.5vw;
     border-bottom: 1px solid var(--border);
-    background: rgba(6, 15, 27, 0.78);
+    background: var(--topbar-bg);
     backdrop-filter: blur(18px);
     position: sticky;
     top: 0;
@@ -37,6 +35,9 @@
 .topbar-actions { gap: 14px; }
 .workspace-state { gap: 8px; color: var(--soft); font-size: 13px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 5px rgba(102,226,176,.08); }
+.theme-toggle { margin-bottom: 0; color: var(--soft); font-size: 12px; font-weight: 700; }
+.theme-toggle .form-check-input { cursor: pointer; }
+.theme-toggle .form-check-label { cursor: pointer; user-select: none; }
 
 .main-stage { width: min(1500px, 93vw); margin: 0 auto; padding: 28px 0 50px; }
 
@@ -45,7 +46,7 @@
     gap: 8px;
     padding: 6px;
     border-radius: 16px;
-    background: rgba(13, 28, 47, 0.76);
+    background: var(--tabs-bg);
     border: 1px solid var(--border);
     width: max-content;
     margin-bottom: 24px;
@@ -59,7 +60,7 @@
     padding: 10px 18px;
     transition: .18s ease;
 }
-.main-tabs > .nav .nav-link:hover, .subtabs > .nav .nav-link:hover { color: var(--text); background: rgba(255,255,255,.035); }
+.main-tabs > .nav .nav-link:hover, .subtabs > .nav .nav-link:hover { color: var(--text); background: var(--ghost-bg); }
 .main-tabs > .nav .nav-link.active, .subtabs > .nav .nav-link.active {
     color: #04111c;
     background: linear-gradient(135deg, #7ce2ff, #59ccef);

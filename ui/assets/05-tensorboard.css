@@ -1,26 +1,121 @@
-.tensor-card .card-body { padding: 20px; }
+/* ---- Dash 4 core components (dropdown, slider) follow the dark theme ----
+   The dropdown menu is rendered outside .tb-page, hence the popper selector. */
+.tb-page,
+[data-radix-popper-content-wrapper] {
+    --Dash-Fill-Inverse-Strong: var(--panel-strong);
+    --Dash-Fill-Interactive-Strong: var(--cyan);
+    --Dash-Fill-Interactive-Weak: rgba(84, 215, 255, .06);
+    --Dash-Fill-Primary-Hover: rgba(84, 215, 255, .07);
+    --Dash-Fill-Primary-Active: rgba(84, 215, 255, .12);
+    --Dash-Fill-Disabled: rgba(255, 255, 255, .05);
+    --Dash-Stroke-Strong: rgba(151, 177, 209, .35);
+    --Dash-Stroke-Weak: var(--border);
+    --Dash-Text-Strong: var(--text);
+    --Dash-Text-Primary: var(--soft);
+    --Dash-Text-Weak: var(--muted);
+    --Dash-Text-Disabled: #60738b;
+}
 
-.tensor-toolbar {
+/* ---- header: run selector + status ---- */
+.tb-header-right { display: flex; align-items: center; gap: 12px; }
+.tb-run-select { min-width: 220px; }
+
+/* ---- status cards ---- */
+.tb-stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+.tb-bar { height: 6px; margin-top: 10px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; }
+.tb-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--amber); }
+
+/* ---- charts ---- */
+.tb-graph { height: 320px; }
+.tb-chart-controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
-    padding: 5px 3px 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+.tb-smoothing { flex: 1; max-width: 340px; }
+.tb-smoothing .field-label { margin-bottom: 0; }
+.tb-switch { color: var(--soft); font-size: 12.5px; }
+.tb-switch .form-check-input:checked { background-color: var(--cyan-2); border-color: var(--cyan-2); }
+
+/* ---- sharpening progress ---- */
+.tb-sharpen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.tb-sample-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.tb-sample-picker .form-check { padding: 0; margin: 0; }
+.tb-sample-btn {
+    padding: 8px 13px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,.03);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.tb-sample-btn:hover { color: var(--text); border-color: rgba(84,215,255,.34); }
+.tb-sample-btn.active { color: #04111c; background: linear-gradient(135deg, #7ce2ff, #59ccef); border-color: transparent; }
+
+.tb-image-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+.tb-image-label { color: var(--soft); font-size: 11.5px; font-weight: 700; margin-bottom: 7px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 6px; }
+.tb-image-tag { color: #5f748d; font-size: 10px; font-weight: 600; }
+.tb-live .tb-image-label { color: var(--cyan); }
+.tb-live .tb-image-tag { color: var(--cyan); opacity: .8; }
+.tb-live .tb-image-box { border-color: rgba(84,215,255,.55); box-shadow: 0 0 0 3px rgba(84,215,255,.08); }
+.tb-image-box {
+    aspect-ratio: 1 / 1;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #050b13;
+    border: 1px solid var(--border);
+    display: grid;
+    place-items: center;
+}
+.tb-image-box img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+
+.tb-timeline { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
+.tb-play-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50% !important;
+    border: 1px solid var(--border-strong) !important;
+    background: rgba(84,215,255,.08) !important;
+    color: var(--cyan) !important;
+    font-size: 14px;
+    flex: none;
+}
+.tb-timeline-slider { flex: 1; min-width: 0; }
+.tb-step-label { color: var(--soft); font-size: 12px; white-space: nowrap; min-width: 190px; text-align: right; }
+
+/* ---- empty state ---- */
+.tb-empty .card-body { padding: 56px 24px; text-align: center; }
+.tb-empty .card-copy { max-width: 520px; margin: 0 auto; }
+.tb-empty-icon { color: var(--cyan); font-size: 44px; line-height: 1; }
+.tb-empty-hint { color: var(--muted); font-size: 12px; margin-top: 22px; }
+.tb-empty-code {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    color: #b9c9dc;
+    background: rgba(255,255,255,.04);
+}
+.tb-play-btn.playing { background: rgba(84,215,255,.18) !important; }
+
+@media (max-width: 1200px) {
+    .tb-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-.tensor-placeholder {
-    min-height: 520px;
-    border-radius: 18px;
-    border: 1px dashed rgba(84,215,255,.22);
-    background: rgba(3,10,18,.45);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 30px;
+@media (max-width: 992px) {
+    .tb-image-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .tb-sharpen-head { flex-direction: column; }
 }
-.tensor-placeholder h4 { margin: 8px 0 5px; }
-.tensor-placeholder p { color: var(--muted); max-width: 560px; }
-.tensor-placeholder code { margin-top: 12px; color: #b9c9dc; background: rgba(255,255,255,.04); padding: 9px 12px; border-radius: 9px; }
-.tensor-icon { color: var(--cyan); font-size: 44px; }
+
+@media (max-width: 650px) {
+    .tb-header-right { width: 100%; }
+    .tb-run-select { flex: 1; min-width: 0; }
+    .tb-stats-grid, .tb-image-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tb-chart-controls, .tb-timeline { flex-wrap: wrap; }
+    .tb-step-label { min-width: 0; text-align: left; }
+}

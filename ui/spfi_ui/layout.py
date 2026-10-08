@@ -1,16 +1,18 @@
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from .config import APP_NAME
 from .components import topbar
-from .pages import inference_page, tensorboard_page, training_page
+from .inference.page import inference_page
+from .tensorboard.page import tensorboard_page
+from .training.page import training_page
 
 
 def build_layout():
     return html.Div(
-        className="app-shell",
+        id="app-shell",
+        className="app-shell theme-dark",
         children=[
-            dcc.Interval(id="fake-train-timer", interval=700, n_intervals=0, disabled=True),
             topbar(),
             html.Main(
                 className="main-stage",

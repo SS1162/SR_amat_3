@@ -2,7 +2,7 @@
     min-height: 205px;
     border: 1px dashed rgba(126, 213, 241, .34);
     border-radius: 18px;
-    background: rgba(84, 215, 255, .025);
+    background: var(--upload-bg);
     display: grid;
     place-items: center;
     padding: 25px 16px;
@@ -10,7 +10,7 @@
     cursor: pointer;
     transition: .2s ease;
 }
-.upload-dropzone:hover { transform: translateY(-2px); border-color: rgba(84, 215, 255, .72); background: rgba(84, 215, 255, .055); }
+.upload-dropzone:hover { transform: translateY(-2px); border-color: rgba(84, 215, 255, .72); background: var(--upload-hover-bg); }
 .upload-icon {
     width: 52px;
     height: 52px;
