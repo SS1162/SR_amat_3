@@ -1,10 +1,11 @@
 from collections import Counter
 
-import pytest
 from dash import Dash, dcc
 
-from spfi_ui.training.callbacks import register_training_callbacks
-from spfi_ui.training.page import finetune_tab, scratch_tab, training_controls, training_metrics, training_page
+from spfi_ui.training.callbacks import _render_metrics, register_training_callbacks
+from spfi_ui.training.page import (
+    base_model_card, data_card, training_controls, training_metrics, training_page,
+)
 
 
 def walk(component):
@@ -29,16 +30,21 @@ def by_id(component, element_id):
     return matches[0]
 
 
-CONTROL_IDS = ["train-poll-timer", "output-path", "choose-output", "output-path-feedback", "run-name", "device-select",
-               "start-training", "stop-training", "resume-training", "train-status", "train-progress",
-               "train-status-copy"]
+def titles(component):
+    return [c.children for c in walk(component) if type(c).__name__ == "H4"]
+
+
+CONTROL_IDS = ["train-poll-timer", "output-path", "choose-output", "output-path-feedback",
+               "run-name", "device-select", "start-training", "stop-training", "resume-training",
+               "train-status", "train-progress", "train-status-copy"]
 METRIC_IDS = [f"metric-{name}-{part}" for name in ("loss", "val", "iter", "elapsed") for part in ("value", "hint")]
+UPLOAD_IDS = ["train-image-upload", "mask-upload", "train-small-image-upload", "train-upload-summary"]
+BASE_MODEL_IDS = ["base-model", "choose-base-model", "base-model-hint"]
 
 
 class TestTrainingControls:
-    @pytest.mark.parametrize("prefix", ["", "ft-", "x-"])
-    def test_ids_are_prefixed(self, prefix):
-        assert sorted(ids(training_controls(prefix))) == sorted(prefix + i for i in CONTROL_IDS)
+    def test_ids(self):
+        assert sorted(ids(training_controls())) == sorted(CONTROL_IDS)
 
     def test_defaults(self):
         panel = training_controls()
@@ -46,14 +52,9 @@ class TestTrainingControls:
         assert by_id(panel, "output-path").value == "runs"
         assert by_id(panel, "device-select").value == "auto"
         assert [o["value"] for o in by_id(panel, "device-select").options] == ["auto", "cuda", "cpu"]
-        assert "Training controls" in [c.children for c in walk(panel) if type(c).__name__ == "H4"]
+        assert titles(panel) == ["Training controls"]
         assert by_id(panel, "choose-output").children == "Select Routing"
         assert by_id(panel, "output-path-feedback").children is None
-
-    def test_custom_run_name_and_title(self):
-        panel = training_controls("ft-", "my_run", "Fine-tuning controls")
-        assert by_id(panel, "ft-run-name").value == "my_run"
-        assert "Fine-tuning controls" in [c.children for c in walk(panel) if type(c).__name__ == "H4"]
 
     def test_initial_button_and_timer_state(self):
         panel = training_controls()
@@ -68,47 +69,51 @@ class TestTrainingControls:
 
 
 class TestTrainingMetrics:
-    @pytest.mark.parametrize("prefix", ["", "ft-"])
-    def test_ids(self, prefix):
-        assert sorted(ids(training_metrics(prefix))) == sorted(prefix + i for i in METRIC_IDS)
+    def test_ids(self):
+        assert sorted(ids(training_metrics())) == sorted(METRIC_IDS)
 
     def test_initial_values_match_idle_render(self):
-        from spfi_ui.training.callbacks import _render_metrics
         metrics = training_metrics()
-        idle = _render_metrics({"state": "idle", "mode": None}, "scratch")
-        shown = tuple(by_id(metrics, element_id).children for element_id in METRIC_IDS)
-        assert shown == idle
+        idle = _render_metrics({"state": "idle", "mode": None})
+        assert tuple(by_id(metrics, element_id).children for element_id in METRIC_IDS) == idle
 
 
-class TestTabs:
-    def test_scratch_tab_has_uploads_controls_and_metrics(self):
-        found = set(ids(scratch_tab()))
-        assert {"train-image-upload", "mask-upload", "train-small-image-upload", "train-upload-summary"} <= found
-        assert set(CONTROL_IDS) <= found and set(METRIC_IDS) <= found
+class TestCards:
+    def test_data_card(self):
+        card = data_card()
+        assert sorted(ids(card)) == sorted(UPLOAD_IDS)
+        assert by_id(card, "train-image-upload").multiple is True
+        assert by_id(card, "mask-upload").multiple is True
+        assert not by_id(card, "train-small-image-upload").multiple
 
-    def test_finetune_tab_has_weights_uploads_and_prefixed_ids(self):
-        tab = finetune_tab()
-        found = set(ids(tab))
-        assert {"ft-weights", "choose-finetune-model", "finetune-data-upload", "finetune-mask-upload",
-                "finetune-small-image-upload", "finetune-upload-summary"} <= found
-        assert {f"ft-{i}" for i in CONTROL_IDS + METRIC_IDS} <= found
-        assert by_id(tab, "ft-run-name").value == "spfi_finetune_01"
+    def test_base_model_card_is_optional_and_empty(self):
+        card = base_model_card()
+        assert sorted(ids(card)) == sorted(BASE_MODEL_IDS)
+        assert getattr(by_id(card, "base-model"), "value", None) is None
+        assert by_id(card, "base-model-hint").children == "Training from scratch"
+        kickers = [c.children for c in walk(card) if getattr(c, "className", None) == "card-kicker"]
+        assert kickers == ["02 · FINE-TUNING · OPTIONAL"]
+        assert titles(card) == ["Fine-tuning: continue from an existing model"]
 
-    def test_uploads_accept_multiple_files(self):
-        page = training_page()
-        for upload_id in ("train-image-upload", "mask-upload", "finetune-data-upload", "finetune-mask-upload"):
-            assert by_id(page, upload_id).multiple is True
-        for upload_id in ("train-small-image-upload", "finetune-small-image-upload"):
-            assert not by_id(page, upload_id).multiple
 
-    def test_training_page_ids_are_unique(self):
+class TestTrainingPage:
+    def test_single_page_without_sub_tabs(self):
+        assert not [c for c in walk(training_page()) if type(c).__name__ in ("Tabs", "Tab")]
+
+    def test_contains_every_section(self):
+        found = set(ids(training_page()))
+        assert set(CONTROL_IDS + METRIC_IDS + UPLOAD_IDS + BASE_MODEL_IDS + ["train-mode-pill"]) <= found
+
+    def test_mode_pill_starts_as_scratch(self):
+        assert by_id(training_page(), "train-mode-pill").children == "From scratch"
+
+    def test_ids_are_unique(self):
         duplicates = [i for i, n in Counter(ids(training_page())).items() if n > 1]
         assert duplicates == []
 
-    def test_training_page_tabs(self):
-        tabs = training_page().children[0]
-        assert tabs.active_tab == "scratch"
-        assert [t.tab_id for t in tabs.children] == ["scratch", "finetune"]
+    def test_no_finetune_tab_leftovers(self):
+        assert not [i for i in ids(training_page()) if i.startswith("ft-") or "finetune" in i]
+        assert "Fine-tuning controls" not in titles(training_page())
 
 
 def test_every_callback_id_exists_in_layout():
@@ -122,6 +127,6 @@ def test_every_callback_id_exists_in_layout():
         referenced.update(dep["id"] for dep in callback["inputs"] + callback["state"])
         # multi-output keys look like "..a.prop...b.prop.."
         referenced.update(out.rsplit(".", 1)[0] for out in output_key.strip(".").split("..."))
-    assert len(referenced) > 40
+    assert len(referenced) > 25
 
     assert referenced - layout_ids == set()
