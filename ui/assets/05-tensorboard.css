@@ -92,15 +92,6 @@
 .tb-empty .card-body { padding: 56px 24px; text-align: center; }
 .tb-empty .card-copy { max-width: 520px; margin: 0 auto; }
 .tb-empty-icon { color: var(--cyan); font-size: 44px; line-height: 1; }
-.tb-empty-hint { color: var(--muted); font-size: 12px; margin-top: 22px; }
-.tb-empty-code {
-    display: inline-block;
-    margin-top: 8px;
-    padding: 9px 12px;
-    border-radius: 9px;
-    color: #b9c9dc;
-    background: rgba(255,255,255,.04);
-}
 .tb-play-btn.playing { background: rgba(84,215,255,.18) !important; }
 
 @media (max-width: 1200px) {
