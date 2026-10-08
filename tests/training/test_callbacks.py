@@ -151,7 +151,7 @@ class FakeApp:
     def __init__(self):
         self.callbacks = {}
 
-    def callback(self, *dependencies):
+    def callback(self, *dependencies, **_kwargs):
         def decorator(fn):
             first_output = dependencies[0]
             self.callbacks[(first_output.component_id, fn.__name__)] = (dependencies, fn)
@@ -210,6 +210,11 @@ CONTROL_ARGS = (1, 0, 0, 0, ["img1", "img2"], ["a.png", "b.png"], ["m"], ["a.png
 class TestRegistration:
     def test_registers_all_expected_callbacks(self, app):
         assert set(app.callbacks) == {
+            ("output-path", "choose_training_output_directory"),
+            ("ft-output-path", "choose_finetune_output_directory"),
+            ("ft-weights", "choose_finetune_model_file"),
+            ("output-path", "validate_training_output_path"),
+            ("ft-output-path", "validate_finetune_output_path"),
             ("train-upload-summary", "summarize_training_uploads"),
             ("finetune-upload-summary", "summarize_finetune_uploads"),
             ("train-poll-timer", "control_training"),
@@ -227,20 +232,94 @@ class TestRegistration:
     def test_registers_on_real_dash_app(self):
         dash_app = Dash(__name__, suppress_callback_exceptions=True)
         register_training_callbacks(dash_app)
-        assert len(dash_app.callback_map) == 6
+        assert len(dash_app.callback_map) == 11
 
 
 class TestUploadSummaries:
     def test_training_summary(self, app):
         fn = app.get("train-upload-summary", "summarize_training_uploads")
-        assert fn(None, None, None, None) == "No files selected yet."
-        chips = fn(["x", "y"], "m", ["a.png", "b.png"], "a.png")
+        assert fn(None, None, None, None, None, None) == "No files selected yet."
+        chips = fn(["x", "y"], "m", None, ["a.png", "b.png"], "a.png", None)
         assert len(chips) == 3
+
+    def test_training_summary_includes_small_image(self, app):
+        fn = app.get("train-upload-summary", "summarize_training_uploads")
+        chips = fn(["x"], None, "s", ["a.png"], None, "small.png")
+        assert len(chips) == 2
 
     def test_finetune_summary(self, app):
         fn = app.get("finetune-upload-summary", "summarize_finetune_uploads")
-        assert fn(None, None, None, None) == "No files selected yet."
-        assert len(fn(["x"], None, ["a.png"], None)) == 1
+        assert fn(None, None, None, None, None, None) == "No files selected yet."
+        assert len(fn(["x"], None, None, ["a.png"], None, None)) == 1
+        assert len(fn(None, ["m"], "s", None, ["a.png"], "small.png")) == 2
+
+
+CHOOSE_FOLDER = [("output-path", "choose_training_output_directory"),
+                 ("ft-output-path", "choose_finetune_output_directory")]
+
+
+class TestChoosePaths:
+    @pytest.mark.parametrize("output_id, name", CHOOSE_FOLDER)
+    def test_choose_folder_replaces_value(self, app, monkeypatch, output_id, name):
+        prompts = []
+        monkeypatch.setattr(callbacks, "choose_folder", lambda prompt: prompts.append(prompt) or "/data/runs")
+        assert app.get(output_id, name)(1, "runs") == "/data/runs"
+        assert prompts == ["Select Routing folder"]
+
+    @pytest.mark.parametrize("output_id, name", CHOOSE_FOLDER)
+    def test_cancelled_folder_keeps_value(self, app, monkeypatch, output_id, name):
+        monkeypatch.setattr(callbacks, "choose_folder", lambda prompt: None)
+        assert app.get(output_id, name)(1, "runs") == "runs"
+
+    def test_choose_model_file(self, app, monkeypatch):
+        prompts = []
+        monkeypatch.setattr(callbacks, "choose_file", lambda prompt: prompts.append(prompt) or "/m/best.pt")
+        assert app.get("ft-weights", "choose_finetune_model_file")(1, "old.pt") == "/m/best.pt"
+        assert prompts == ["Select fine-tuning model file"]
+
+    def test_cancelled_model_file_keeps_value(self, app, monkeypatch):
+        monkeypatch.setattr(callbacks, "choose_file", lambda prompt: None)
+        assert app.get("ft-weights", "choose_finetune_model_file")(1, "old.pt") == "old.pt"
+
+    def test_choosers_dont_fire_on_page_load(self):
+        dash_app = Dash(__name__, suppress_callback_exceptions=True)
+        register_training_callbacks(dash_app)
+        prevent = {cb["output"]: cb.get("prevent_initial_call") for cb in dash_app._callback_list}
+        for key in ("output-path.value", "ft-output-path.value", "ft-weights.value"):
+            assert prevent[key] is True
+
+
+VALIDATE = [("output-path", "validate_training_output_path"),
+            ("ft-output-path", "validate_finetune_output_path")]
+VALID, INVALID = "field-feedback field-feedback-valid", "field-feedback field-feedback-invalid"
+
+
+class TestValidateOutputPath:
+    @pytest.mark.parametrize("output_id, name", VALIDATE)
+    def test_existing_directory_is_valid(self, app, tmp_path, output_id, name):
+        assert app.get(output_id, name)(str(tmp_path)) == ("soft-input is-valid", "Directory exists.", VALID)
+
+    @pytest.mark.parametrize("output_id, name", VALIDATE)
+    def test_new_directory_is_valid(self, app, tmp_path, output_id, name):
+        assert app.get(output_id, name)(str(tmp_path / "new")) == (
+            "soft-input is-valid", "Directory will be created when training starts.", VALID)
+
+    @pytest.mark.parametrize("output_id, name", VALIDATE)
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    def test_empty_path_is_invalid(self, app, output_id, name, value):
+        assert app.get(output_id, name)(value) == ("soft-input is-invalid", "Directory path is required.", INVALID)
+
+    @pytest.mark.parametrize("output_id, name", VALIDATE)
+    def test_file_path_is_invalid(self, app, tmp_path, output_id, name):
+        file_path = tmp_path / "f.txt"
+        file_path.write_text("x")
+        assert app.get(output_id, name)(str(file_path)) == (
+            "soft-input is-invalid", "Path points to a file, not a directory.", INVALID)
+
+    @pytest.mark.parametrize("output_id, name", VALIDATE)
+    def test_missing_parent_is_invalid(self, app, tmp_path, output_id, name):
+        assert app.get(output_id, name)(str(tmp_path / "a" / "b")) == (
+            "soft-input is-invalid", "Parent directory does not exist.", INVALID)
 
 
 class TestControlTraining:
