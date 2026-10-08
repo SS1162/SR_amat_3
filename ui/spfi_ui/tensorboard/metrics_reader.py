@@ -1,4 +1,4 @@
-"""Read training runs written by algo/train.py (or ui/dev/fake_run.py).
+"""Read training runs written by algo/train.py.
 
 Run folder format:
 
@@ -10,7 +10,7 @@ Run folder format:
 No Dash code here: the TensorBoard page calls these functions and only handles display.
 
 Quick check from the ui/ folder:
-    python -m spfi_ui.tensorboard.metrics_reader fake_run
+    python -m spfi_ui.tensorboard.metrics_reader <run_name>
 """
 
 from __future__ import annotations

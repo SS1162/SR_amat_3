@@ -212,8 +212,6 @@ def _empty_state():
                     "Runs appear here automatically as soon as training starts writing to the runs folder.",
                     className="card-copy",
                 ),
-                html.Div("Developing the UI without a model? Generate a demo run:", className="tb-empty-hint"),
-                html.Code("python ui/dev/fake_run.py", className="tb-empty-code"),
             ]
         ),
     )
