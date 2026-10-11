@@ -11,3 +11,7 @@ checkpoints/
 
 # macOS
 .DS_Store
+
+# Inference job folders and the Dash background-callback cache
+tmp/
+.cache/

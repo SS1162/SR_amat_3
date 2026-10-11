@@ -47,13 +47,16 @@ from PIL import Image
 from torch.optim import AdamW
 from torchvision.transforms.functional import to_tensor
 
+from .image_loading import load_image
 from .model import build_spfi
+from .preprocessing import normalize_image
 from .run_logger import RunLogger
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 SCALE = 4
+EMBED_DIM = 48
 LR_PATCH = 64
 HR_PATCH = LR_PATCH * SCALE          # 256
 SIGMA_MIN = 0.2
@@ -163,7 +166,7 @@ class EMPSDataset:
     def _load_gray_tensor(self, filename: str) -> torch.Tensor:
         """Load PNG as [1, H, W] float32 in [0, 1]."""
         path = self.image_dir / f"{filename}.png"
-        img = Image.open(path).convert("L")
+        img = normalize_image(load_image(path))  # same loading + normalization as inference
         return to_tensor(img)                   # [1, H, W], float32
 
     # ------------------------------------------------------------------
@@ -302,7 +305,7 @@ class SPFITrainer:
         self._train_rng = random.Random(seed + 1)
 
         # ---- model ----
-        self.model = build_spfi(scale=SCALE, embed_dim=48).to(self.device)
+        self.model = build_spfi(scale=SCALE, embed_dim=EMBED_DIM).to(self.device)
         INIT_REGISTRY[init](self, weights)
         self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
 
@@ -409,6 +412,7 @@ class SPFITrainer:
             "model_state": self.model.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "best_val_loss": self.best_val_loss,
+            "hparams": {"scale": SCALE, "embed_dim": EMBED_DIM},
         }, path)
         print(f"[ckpt] saved → {path}")
 
