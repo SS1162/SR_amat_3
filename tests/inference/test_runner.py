@@ -11,7 +11,7 @@ import pytest
 import torch
 from torch import nn
 
-from algo import preprocessing
+from algo import image_loading, preprocessing
 from inference import image_io, runner
 from inference.errors import (
     ImageLoadError,
@@ -93,7 +93,7 @@ def _install_fakes(
         return image.astype(np.float32) / PIXEL_MAX
 
     monkeypatch.setattr(image_io, "resolve_inputs", fake_resolve_inputs)
-    monkeypatch.setattr(image_io, "load_image", fake_load_image)
+    monkeypatch.setattr(image_loading, "load_image", fake_load_image)
     monkeypatch.setattr(image_io, "save_image", fake_save_image)
     monkeypatch.setattr(preprocessing, "normalize_image", fake_normalize_image)
     monkeypatch.setattr(runner, "build_spfi", _FakeSR)

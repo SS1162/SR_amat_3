@@ -1,14 +1,13 @@
 """Image file access for inference.
 
 Named ``image_io`` (not ``io``) to avoid shadowing the standard-library module.
-
-STATUS: ``resolve_inputs`` is a signature only; its docstring defines the contract.
-See docs/inference_required_changes.md.
+Image loading lives in ``algo.image_loading`` (shared with training).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +20,6 @@ __all__ = [
     "OUTPUT_SUFFIX",
     "OUTPUT_EXTENSION",
     "resolve_inputs",
-    "load_image",
     "save_image",
     "output_path_for",
 ]
@@ -30,37 +28,45 @@ __all__ = [
 SUPPORTED_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
 OUTPUT_SUFFIX = "_sr"
 OUTPUT_EXTENSION = ".tif"
+HIDDEN_FILE_PREFIX = "."
+# Splits a name into text and digit runs, e.g. "img10.png" -> ["img", "10", ".png"].
+DIGIT_RUN_PATTERN = re.compile(r"(\d+)")
 
-# Pillow modes that are already single-channel grayscale; their raw values are kept as is.
-GRAYSCALE_MODES = ("L", "I;16", "I;16L", "I;16B", "I", "F")
-# Mode used for anything else (colour, palette, bilevel); all of those are 8 bits per channel.
-FALLBACK_GRAYSCALE_MODE = "L"
 UINT16_MAX = np.iinfo(np.uint16).max
 TIFF_FORMAT = "TIFF"
+
+
+def _natural_sort_key(path: Path) -> tuple[tuple[tuple[int, int | str], ...], str]:
+    """Return a key ordering digit runs numerically ("img2" before "img10"), case-insensitively.
+
+    The exact name breaks ties (e.g. "A.png" vs "a.png") so the order never depends on the filesystem.
+    """
+    parts = DIGIT_RUN_PATTERN.split(path.name.lower())
+    natural = tuple((0, int(part)) if part.isdigit() else (1, part) for part in parts)
+    return natural, path.name
+
+
+def _is_supported_image(path: Path) -> bool:
+    """Return True for a visible file with a supported (case-insensitive) extension."""
+    return (
+        path.is_file()
+        and not path.name.startswith(HIDDEN_FILE_PREFIX)
+        and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+    )
 
 
 def resolve_inputs(input_path: Path) -> list[Path]:
     """Return the images to process, at their ORIGINAL location (nothing is copied).
 
-    A file yields ``[input_path]``. A folder yields its files whose extension is in
-    ``SUPPORTED_IMAGE_EXTENSIONS``, sorted deterministically (by file name). The
-    sorting is a hard requirement: ``start_from`` indexes into this list, so the
+    A file yields ``[input_path]``. A folder yields the visible files directly inside it
+    (no recursion) whose extension is in ``SUPPORTED_IMAGE_EXTENSIONS``, in natural order.
+    The sorting is a hard requirement: ``start_from`` indexes into this list, so the
     same folder must always produce the same order.
     """
-    raise NotImplementedError
-
-
-def load_image(path: Path) -> np.ndarray:
-    """Read one grayscale image directly from ``path`` (no copying, no caching).
-
-    Returns the raw 2D array in its original dtype (e.g. uint8 / uint16).
-    No normalization: that is ``algo.preprocessing.normalize_image``'s job.
-    Colour / palette images are converted to 8-bit grayscale (``"L"``).
-    """
-    with Image.open(path) as image:
-        if image.mode not in GRAYSCALE_MODES:
-            image = image.convert(FALLBACK_GRAYSCALE_MODE)
-        return np.array(image)
+    if input_path.is_file():
+        return [input_path]
+    images = [path for path in input_path.iterdir() if _is_supported_image(path)]
+    return sorted(images, key=_natural_sort_key)
 
 
 def save_image(image: np.ndarray, path: Path) -> None:

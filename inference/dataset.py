@@ -13,9 +13,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import to_tensor
 
-from algo import preprocessing
+from algo import image_loading, preprocessing
 
-from . import image_io
 from .errors import ImageLoadError
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ class InferenceImageDataset(Dataset[tuple[torch.Tensor, int]]):
         """Return the ``[1, H, W]`` float32 CPU tensor of image ``index`` and the index itself."""
         path = self._paths[index]
         try:
-            raw = image_io.load_image(path)
+            raw = image_loading.load_image(path)
             normalized = preprocessing.normalize_image(raw)
             tensor = to_tensor(normalized)
         except Exception as exc:

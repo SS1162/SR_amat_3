@@ -108,6 +108,18 @@ def _require_key(container: object, key: str, file_name: str) -> object:
     return container[key]
 
 
+def _require_int(container: object, key: str, file_name: str) -> int:
+    """Return ``container[key]`` as an int, raising ``ModelLoadError`` if it is missing or not an int."""
+    value = _require_key(container, key, file_name)
+    # bool is a subclass of int, but True/False is never a valid hyperparameter.
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ModelLoadError(
+            f"Checkpoint hparam '{key}' must be an int, got {type(value).__name__}",
+            file_name=file_name,
+        )
+    return value
+
+
 def _load_model(model_path: Path, device: torch.device) -> nn.Module:
     """Build the SPFI model from the checkpoint's hparams and weights, on ``device``, in eval mode."""
     file_name = model_path.name
@@ -118,8 +130,8 @@ def _load_model(model_path: Path, device: torch.device) -> nn.Module:
 
     model_state = _require_key(checkpoint, MODEL_STATE_KEY, file_name)
     hparams = _require_key(checkpoint, HPARAMS_KEY, file_name)
-    scale = _require_key(hparams, SCALE_KEY, file_name)
-    embed_dim = _require_key(hparams, EMBED_DIM_KEY, file_name)
+    scale = _require_int(hparams, SCALE_KEY, file_name)
+    embed_dim = _require_int(hparams, EMBED_DIM_KEY, file_name)
 
     try:
         model = build_spfi(scale=scale, embed_dim=embed_dim)
@@ -156,13 +168,13 @@ def _fetch_next(iterator: Iterator[Batch], file_name: str) -> torch.Tensor:
     return lr_batch
 
 
-def _run_model(model: nn.Module, lr_batch: torch.Tensor, device: torch.device) -> torch.Tensor:
+def _run_model(model: nn.Module, lr_batch: torch.Tensor, device: torch.device, file_name: str) -> torch.Tensor:
     """Run ``model`` on ``lr_batch`` on ``device`` without autograd; failures become ``ModelRunError``."""
     try:
         with torch.inference_mode():
             return model(lr_batch.to(device))
     except Exception as exc:
-        raise ModelRunError("Model failed on image") from exc
+        raise ModelRunError("Model failed on image", file_name=file_name) from exc
 
 
 def _save(sr_image: np.ndarray, input_path: Path, output_dir: Path) -> None:
@@ -241,7 +253,7 @@ def _process_images(
         path = paths[index]
         try:
             lr_batch = _fetch_next(iterator, path.name)
-            sr = postprocess_output(_run_model(model, lr_batch, device))
+            sr = postprocess_output(_run_model(model, lr_batch, device, path.name))
             _save(sr, path, output_dir)
         except InferenceError as error:
             return _fail(publisher, error, index, total)
