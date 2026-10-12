@@ -8,7 +8,9 @@ See section "Scatter pre-process module" (Fig. 2, Fig. 3, Algorithm 1).
 
 This file implements both mixing paths of SPM: TMM (Tensor Mixing Method) for
 the low-frequency band, and EMM (Einstein Mixing Method) for the high-frequency
-band.
+band. Both now receive the real DTCWT output (issue #35) through
+`dtcwt.DTCWT` in spm.py: TMM gets the real lowpass XL, EMM gets the complex
+finest-level highpass XH.
 
 EMM below is Shoshana Pinski's delivered implementation, unchanged. TMM was
 missing from the delivery (named in __all__ and imported by spm.py, but never
@@ -60,6 +62,11 @@ class TMM(nn.Module):
     This must still be reviewed by Shoshana before Layer 6 is called done — it
     is a reconstruction of her spec, not her own hand.
     ------------------------------------------------------------------
+
+    Input size in practice: XL from the DTCWT is [B,C,H,W] at the SPM input
+    size with 1 level and halves per extra level, so with the SPM default
+    base size of 64x64 the weight is resized whenever the input or
+    `dtcwt_levels` differs from that.
 
     Args:
         channels: C, number of feature channels.
@@ -147,7 +154,8 @@ class EMM(nn.Module):
     ordering/grouping):
         Input/output are `[B, C, 6, H, W]`, complex-valued (torch complex
         dtype) — B=batch, C=original feature channels going into the
-        DTCWT, 6=directional orientations (this "6" is the paper's k;
+        DTCWT, H,W=spatial size of the finest DTCWT level (half the SPM
+        input size), 6=directional orientations (this "6" is the paper's k;
         there is no separate real/imag axis of size 2, since real+imag
         are packed into the complex dtype instead of two stacked real
         channels).
@@ -267,7 +275,8 @@ class EMM(nn.Module):
         """
         Args:
             x: high-frequency feature XH, complex-valued, shape
-                [B, C, 6, H, W] (as returned by the DTCWT).
+                [B, C, 6, H, W] (finest level as returned by `dtcwt.DTCWT`;
+                H, W are half the SPM input size). Any H, W is accepted.
 
         Returns:
             XPH, complex-valued, shape [B, C, 6, H, W] (identical to the
