@@ -1,4 +1,4 @@
-from dash import html
+from dash import dcc, html
 import dash_bootstrap_components as dbc
 
 from ..components import image_preview_card, section_header, status_pill, upload_box
@@ -8,6 +8,11 @@ def inference_page():
     return html.Div(
         className="tab-content-wrap",
         children=[
+            # Final state of the last Run / Continue: {job_id, run_dir, status, next_index, processed, total, error}
+            dcc.Store(id="inference-job"),
+            # Job id of the running job, published by its first progress update so Stop can reach it
+            dcc.Store(id="inference-active-job"),
+            dcc.Download(id="inference-download-file"),
             section_header(
                 "INFERENCE",
                 "Upscale new images with a trained model",
@@ -78,6 +83,27 @@ def inference_page():
                                 ),
                             ],
                             className="g-4",
+                        ),
+                        html.Div(
+                            className="run-status-block",
+                            children=[
+                                html.Div(
+                                    [
+                                        dbc.Button("Stop", id="stop-inference", className="danger-action", n_clicks=0, disabled=True),
+                                        dbc.Button("Continue", id="continue-inference", className="resume-action", n_clicks=0, disabled=True),
+                                        dbc.Button(
+                                            "Download results",
+                                            id="download-inference",
+                                            className="input-button",
+                                            n_clicks=0,
+                                            disabled=True,
+                                        ),
+                                    ],
+                                    className="inference-actions",
+                                ),
+                                dbc.Progress(id="inference-progress", value=0, label="", className="inference-progress"),
+                                html.Div("No inference run yet", id="inference-progress-copy", className="status-copy"),
+                            ],
                         ),
                     ]
                 ),

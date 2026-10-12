@@ -33,3 +33,8 @@
     text-align: center;
     border: 1px solid rgba(84,215,255,.15);
 }
+
+.inference-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.inference-progress { height: 16px; background: rgba(255,255,255,.055); border-radius: 999px; margin-top: 13px; }
+.inference-progress .progress-bar { background: linear-gradient(90deg, #4bcaf2, #9c83ff); border-radius: 999px; font-size: 10px; font-weight: 800; color: #04111c; }
+@media (max-width: 576px) { .inference-actions { grid-template-columns: 1fr; } }

@@ -19,3 +19,6 @@ Pillow>=10.0
 dash>=3.0
 dash-bootstrap-components>=2.0
 plotly>=5.20
+diskcache>=5.6           # Dash DiskcacheManager (Inference tab background callback)
+multiprocess>=0.70       # required by Dash DiskcacheManager
+psutil>=5.9              # required by Dash DiskcacheManager
