@@ -33,14 +33,24 @@ class SPM(nn.Module):
     ------------------------------------------------------------------
     Design decisions (see SPFI_DESIGN.md / notebook for full discussion):
 
-    DTCWT is an EXTERNAL DEPENDENCY, NOT implemented here (issue #35 is
-    not yet available). `forward()` below has an explicit, clearly
-    marked integration point where the real DTCWT forward/inverse calls
-    go — it is intentionally left unimplemented (raises
-    NotImplementedError) rather than filled with placeholder/mock DTCWT
-    logic, so nothing here can be mistaken for real DTCWT behavior.
-    Whoever wires SPM into the full model should replace the two marked
-    lines with the real calls.
+    DTCWT integration (Layer 6): the real DTCWT (issue #35, Miri's
+    implementation) is wired in through `dtcwt.DTCWT`, an SPM-facing
+    wrapper around `DTCWTTransform` that exposes the `(low, high)` /
+    `inverse(low, high)` contract this module was written against.
+        - Requires `pytorch_wavelets`; constructing SPM without it raises
+          `dtcwt.DTCWTUnavailable`.
+        - Input H and W must be even (the wrapper raises otherwise rather
+          than padding silently).
+        - `dtcwt_levels` (default 1) sets the number of DTCWT levels. Only
+          the finest high-frequency level goes through EMM; with
+          `dtcwt_levels > 1` the coarser levels are stored by the wrapper
+          during the forward transform and put back unchanged in the
+          inverse, so no information is dropped.
+        - Band shapes actually produced (input [B,C,H,W]):
+            XL: real    [B,C,H,W] at 1 level, [B,C,H/2^(L-1),W/2^(L-1)]
+                at L levels. TMM resizes its weight to match, so any
+                size works.
+            XH: complex [B,C,6,H/2,W/2] (finest level, any L).
 
     The "+ alpha * X" residual connection (ASSUMPTION — the paper's
     Fig. 2 diagram shows a "+" after "Inverse Scattering", but only two
@@ -76,6 +86,8 @@ class SPM(nn.Module):
         emm_complex_mode: passed through to EMM ("independent" or
             "full_complex").
         alpha_init: initial value of the learnable residual scale (default 0.1).
+        dtcwt_levels: number of DTCWT decomposition levels (default 1); see
+            "DTCWT integration" above.
     """
 
     def __init__(
@@ -93,13 +105,13 @@ class SPM(nn.Module):
         self.tmm = TMM(channels=channels, base_height=tmm_base_height, base_width=tmm_base_width)
         self.emm = EMM(channels=channels, group_multiplier=emm_group_multiplier, complex_mode=emm_complex_mode)
         self.alpha = nn.Parameter(torch.tensor(float(alpha_init)))
-        # Layer 6 integration: the real DTCWT (issue #35) is now available.
+        # Real DTCWT (issue #35) via the SPM-facing wrapper in dtcwt.py.
         self.dtcwt = DTCWT(levels=dtcwt_levels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: input feature, real-valued, shape [B, C, H, W].
+            x: input feature, real-valued, shape [B, C, H, W], H and W even.
 
         Returns:
             output feature, real-valued, shape [B, C, H, W] (same shape
@@ -111,25 +123,16 @@ class SPM(nn.Module):
         if c != self.channels:
             raise ValueError(f"SPM was built for channels={self.channels}, got input with C={c}")
 
-        # -----------------------------------------------------------
-        # >>> DTCWT INTEGRATION POINT (external dependency, issue #35) <<<
-        # Replace the next line with the real DTCWT forward call, e.g.:
-        #   XL, XH = dtcwt_forward(x)
-        # XL must be real-valued [B,C,H,W] (TMM's expected input).
-        # XH must be complex-valued [B,C,6,H,W] (EMM's expected input).
+        # DTCWT forward: XL real [B,C,H_low,W_low] for TMM, XH complex
+        # [B,C,6,H/2,W/2] (finest level) for EMM. Coarser levels, if any,
+        # are kept inside self.dtcwt for the inverse.
         XL, XH = self.dtcwt(x)
-        # -----------------------------------------------------------
 
         XPL = self.tmm(XL)
         XPH = self.emm(XH)
 
-        # -----------------------------------------------------------
-        # >>> DTCWT INTEGRATION POINT (external dependency, issue #35) <<<
-        # Replace the next line with the real DTCWT inverse call, e.g.:
-        #   reconstructed = dtcwt_inverse(XPL, XPH)
-        # reconstructed must be real-valued [B,C,H,W].
+        # DTCWT inverse: real [B,C,H,W], same shape as x.
         reconstructed = self.dtcwt.inverse(XPL, XPH)
-        # -----------------------------------------------------------
 
         return reconstructed + self.alpha * x
 
