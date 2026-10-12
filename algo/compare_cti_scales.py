@@ -3,8 +3,10 @@
 For each config the SPFI x4 model is built with the given CTI levels and:
   * params + forward GFLOPs on a [1,1,64,64] LR input (exact, torch FlopCounterMode)
   * latency of one forward pass (on the chosen device)
-  * PSNR / SSIM on a fixed EMPS validation set after an identical, short
-    training budget (same seed, same data order, same init RNG for all configs)
+  * PSNR / SSIM on a fixed EMPS validation set, checked every --eval_every
+    iterations of an identical training budget (same seed, same data order,
+    same init RNG for all configs). The table shows the best check and the last
+    one: with batch size 1 and a constant LR the last step alone is noisy.
 
 Usage
 -----
@@ -89,7 +91,9 @@ def evaluate(model, val_set, device: torch.device) -> tuple[float, float]:
 
 
 def train(model, train_ds, iters: int, seed: int, lr: float, log_every: int, name: str,
-          device: torch.device) -> float:
+          device: torch.device, val_set=None, eval_every: int = 0) -> tuple[float, list[dict]]:
+    """Train in place. Returns (sec_per_iter, history of {"iter", "psnr", "ssim"} checks)."""
+    history: list[dict] = []
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
     rng = random.Random(seed + 1)
     model.train()
@@ -105,7 +109,11 @@ def train(model, train_ds, iters: int, seed: int, lr: float, log_every: int, nam
         if it % log_every == 0:
             el = time.perf_counter() - t0
             print(f"  [{name}] iter {it}/{iters}  loss={loss.item():.4f}  {el / it:.2f}s/it", flush=True)
-    return (time.perf_counter() - t0) / max(iters, 1)
+        if val_set is not None and eval_every > 0 and (it % eval_every == 0 or it == iters):
+            p, s = evaluate(model, val_set, device)
+            history.append({"iter": it, "psnr": p, "ssim": s})
+            print(f"  [{name}] eval @ {it}: PSNR={p:.3f} dB  SSIM={s:.4f}", flush=True)
+    return (time.perf_counter() - t0) / max(iters, 1), history
 
 
 def _sync(device: torch.device) -> None:
@@ -121,6 +129,8 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--log_every", type=int, default=25)
+    ap.add_argument("--eval_every", type=int, default=500,
+                    help="score PSNR/SSIM every N iterations; the table reports the best check and the last")
     ap.add_argument("--device", type=str, default=None, help="'cuda' or 'cpu' (default: auto)")
     ap.add_argument("--configs", nargs="*", default=list(CONFIGS))
     ap.add_argument("--out_dir", type=Path, default=Path("runs") / "cti_scales_compare")
@@ -155,22 +165,34 @@ def main() -> None:
         print(f"{name}: levels [{r['levels']}]  params={r['params']:,}  "
               f"GFLOPs={r['gflops']:.2f}  fwd={r['latency_ms']:.0f} ms", flush=True)
         if args.iters > 0:
-            r["sec_per_iter"] = train(model, train_ds, args.iters, args.seed, args.lr, args.log_every, name, device)
-            r["psnr"], r["ssim"] = evaluate(model, val_set, device)
-            print(f"  -> {name}: PSNR={r['psnr']:.3f} dB  SSIM={r['ssim']:.4f}", flush=True)
+            r["sec_per_iter"], r["history"] = train(model, train_ds, args.iters, args.seed, args.lr,
+                                                    args.log_every, name, device,
+                                                    val_set=val_set, eval_every=args.eval_every or args.iters)
+            best = max(r["history"], key=lambda h: h["psnr"])
+            last = r["history"][-1]
+            r["psnr"], r["ssim"], r["best_iter"] = best["psnr"], best["ssim"], best["iter"]
+            r["psnr_last"], r["ssim_last"] = last["psnr"], last["ssim"]
+            print(f"  -> {name}: best PSNR={r['psnr']:.3f} dB  SSIM={r['ssim']:.4f} (iter {best['iter']})"
+                  f"  | last PSNR={r['psnr_last']:.3f}  SSIM={r['ssim_last']:.4f}", flush=True)
             torch.save(model.state_dict(), args.out_dir / f"{name.split()[0]}.pt")
         results[name] = r
         (args.out_dir / "results.json").write_text(json.dumps(
             {"iters": args.iters, "n_val": args.n_val, "seed": args.seed, "results": results}, indent=2))
 
-    print("\n| config | levels (kernel/stride) | params | GFLOPs | fwd ms | PSNR | SSIM |")
-    print("|---|---|---|---|---|---|---|")
+    print("\n| config | levels (kernel/stride) | params | GFLOPs | fwd ms "
+          "| best PSNR | best SSIM | @iter | last PSNR | last SSIM |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
     for name in args.configs:
         r = results[name]
-        ps = f"{r['psnr']:.3f}" if "psnr" in r else "-"
-        ss = f"{r['ssim']:.4f}" if "ssim" in r else "-"
-        print(f"| {name} | {r['levels']} | {r['params']:,} | {r['gflops']:.2f} | "
-              f"{r['latency_ms']:.0f} | {ps} | {ss} |")
+
+        def f(key: str, fmt: str) -> str:
+            return format(r[key], fmt) if key in r else "-"
+
+        print(f"| {name} | {r['levels']} | {r['params']:,} | {r['gflops']:.2f} | {r['latency_ms']:.0f} "
+              f"| {f('psnr', '.3f')} | {f('ssim', '.4f')} | {f('best_iter', 'd')} "
+              f"| {f('psnr_last', '.3f')} | {f('ssim_last', '.4f')} |")
+    if "bicubic" in results:
+        print(f"bicubic PSNR (same val patches): {results['bicubic']['psnr']:.3f} dB")
 
 
 if __name__ == "__main__":
