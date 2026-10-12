@@ -131,7 +131,9 @@ def main() -> None:
     ap.add_argument("--log_every", type=int, default=25)
     ap.add_argument("--eval_every", type=int, default=500,
                     help="score PSNR/SSIM every N iterations; the table reports the best check and the last")
-    ap.add_argument("--device", type=str, default=None, help="'cuda' or 'cpu' (default: auto)")
+    ap.add_argument("--all_images", action="store_true",
+                    help="use every image in images/, including EMPS's test split (not recommended)")
+    ap.add_argument("--device",type=str, default=None, help="'cuda' or 'cpu' (default: auto)")
     ap.add_argument("--configs", nargs="*", default=list(CONFIGS))
     ap.add_argument("--out_dir", type=Path, default=Path("runs") / "cti_scales_compare")
     args = ap.parse_args()
@@ -146,6 +148,16 @@ def main() -> None:
     if args.iters > 0:
         image_dir = args.emps_dir / "images"
         files = sorted(p.stem for p in image_dir.glob("*.png"))
+        train_csv = args.emps_dir / "train.csv"
+        if train_csv.is_file() and not args.all_images:
+            # Same protocol as notebooks/train_colab.ipynb: only EMPS's train split is used
+            # (split 80/20 into train / validation here); test.csv images are never touched.
+            train_ids = {line.split(",")[0].strip()
+                         for line in train_csv.read_text().splitlines() if line.strip()}
+            files = [f for f in files if f in train_ids]
+            print(f"using EMPS train split only: {len(files)} images (test.csv held out)")
+        else:
+            print(f"WARNING: using all {len(files)} images in {image_dir} (no train.csv split)")
         random.Random(args.seed).shuffle(files)
         n_train = int(0.8 * len(files))
         train_ds = EMPSDataset(image_dir, files[:n_train])
