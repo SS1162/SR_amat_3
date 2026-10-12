@@ -45,19 +45,20 @@ class TMM(nn.Module):
     (`tests/spfi/test_mixing.py`), both of which were delivered. Her
     `mixing.py` shipped with `TMM` named in `__all__` and imported by `spm.py`
     but never defined, so `spm.py` raised `ImportError` on import and her TMM
-    tests could not run. Nothing here is invented: every decision below is
-    quoted from her design table.
+    tests could not run. Every decision below is quoted from her design table,
+    except the weight init, which was later changed (see below).
 
         | Variable H,W        | stored at one fixed base size [H0,W0],
         |                     | resized at forward time
         | Upsampling (rare)   | bilinear
         | Downsampling (common)| area
-        | Weight init         | near-1.0 + small noise (NOT Xavier)
+        | Weight init         | random, N(0, init_std^2) (NOT Xavier)
 
-    Her stated rationale, preserved: Xavier's variance-preservation argument is
-    built for operations that sum over an axis, which an element-wise product
-    does not do; initialising near 1.0 keeps the module transparent
-    (XPL ~= XL) at the start of training.
+    Weight init was originally near-1.0 + small noise, so the module started
+    transparent (XPL ~= XL). It was changed to a fully random normal init by
+    the task owner's decision. Xavier is still not used: its
+    variance-preservation argument is built for operations that sum over an
+    axis, which an element-wise product does not do.
 
     This must still be reviewed by Shoshana before Layer 6 is called done — it
     is a reconstruction of her spec, not her own hand.
@@ -72,7 +73,7 @@ class TMM(nn.Module):
         channels: C, number of feature channels.
         base_height: H0, stored weight height.
         base_width: W0, stored weight width.
-        init_noise: std of the small noise added to the near-1.0 init.
+        init_std: std of the random normal weight init (mean 0, default 1.0).
     """
 
     def __init__(
@@ -80,7 +81,7 @@ class TMM(nn.Module):
         channels: int,
         base_height: int,
         base_width: int,
-        init_noise: float = 0.02,
+        init_std: float = 1.0,
     ) -> None:
         super().__init__()
         if channels <= 0:
@@ -94,11 +95,10 @@ class TMM(nn.Module):
         self.base_height = base_height
         self.base_width = base_width
 
-        # Near-1.0 + small noise, per the design table (deliberately not Xavier).
-        weight = torch.ones(channels, base_height, base_width)
-        if init_noise:
-            weight = weight + init_noise * torch.randn_like(weight)
-        self.weight = nn.Parameter(weight)
+        # Random normal init (deliberately not Xavier, see class docstring).
+        self.weight = nn.Parameter(
+            init_std * torch.randn(channels, base_height, base_width)
+        )
 
     def _resized_weight(self, height: int, width: int) -> torch.Tensor:
         """W_theta resized to the actual input size.
