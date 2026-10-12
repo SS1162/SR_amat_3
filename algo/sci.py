@@ -32,7 +32,7 @@ there is no identity-stub fallback (see the import block below for why).
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Mapping
 
 import torch
 from torch import nn
@@ -43,7 +43,7 @@ from torch import nn
 # in the SPM or CTI path would silently downgrade the model to identity modules
 # and training would still "work", producing results labelled SPFI that were not
 # SPFI. A missing dependency must fail loudly instead.
-from .cti import CTI, ScaleConfig
+from .cti import CTI
 from .spm import SPM
 
 __all__ = [
@@ -193,14 +193,13 @@ class SCITransformerLayer(nn.Module):
         attn_drop: float = 0.0,
         spm: nn.Module | None = None,
         cti: nn.Module | None = None,
-        cti_scales: Sequence[ScaleConfig] | None = None,
+        cti_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
         self.norm1 = LayerNorm2d(dim)
         self.spm = spm if spm is not None else SPM(dim)
-        if cti is None:
-            cti = CTI(dim) if cti_scales is None else CTI(dim, scales=cti_scales)
-        self.cti = cti
+        # cti_kwargs: extra CTI settings, e.g. {"kv_downsample": 2} or {"scales": ...}.
+        self.cti = cti if cti is not None else CTI(dim, **(cti_kwargs or {}))
         self.attn = SCIAttention(dim, num_heads, attn_drop=attn_drop, proj_drop=drop)
         self.norm2 = LayerNorm2d(dim)
         self.mlp = MLP(dim, expansion=mlp_ratio, drop=drop)
@@ -231,13 +230,13 @@ class SCIBlock(nn.Module):
         mlp_ratio: float = DEFAULT_MLP_RATIO,
         drop: float = 0.0,
         attn_drop: float = 0.0,
-        cti_scales: Sequence[ScaleConfig] | None = None,
+        cti_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
         self.layers = nn.ModuleList(
-            SCITransformerLayer(dim, num_heads, mlp_ratio, drop, attn_drop, cti_scales=cti_scales)
+            SCITransformerLayer(dim, num_heads, mlp_ratio, drop, attn_drop, cti_kwargs=cti_kwargs)
             for _ in range(depth)
         )
         self.conv = nn.Conv2d(dim, dim, kernel_size=3, padding=1)
@@ -266,13 +265,13 @@ class SCIStage(nn.Module):
         mlp_ratio: float = DEFAULT_MLP_RATIO,
         drop: float = 0.0,
         attn_drop: float = 0.0,
-        cti_scales: Sequence[ScaleConfig] | None = None,
+        cti_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
         if n_blocks < 1:
             raise ValueError(f"n_blocks must be >= 1, got {n_blocks}")
         self.blocks = nn.ModuleList(
-            SCIBlock(dim, depth, num_heads, mlp_ratio, drop, attn_drop, cti_scales=cti_scales)
+            SCIBlock(dim, depth, num_heads, mlp_ratio, drop, attn_drop, cti_kwargs=cti_kwargs)
             for _ in range(n_blocks)
         )
 

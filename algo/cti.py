@@ -246,13 +246,20 @@ class CrossTokenIntegration(nn.Module):
     scales:
         Sequence of ScaleConfig describing each multi-scale DSConv branch.
         Defaults to DEFAULT_SCALES (see A2).
+    kv_downsample:
+        "K" -- the common resolution every branch is resized to before fusion,
+        as a reduction factor of the input: 1 -> (H, W) (A5, the default),
+        2 -> (H/2, W/2), 4 -> (H/4, W/4). K and V are then attended against
+        Q's full H*W tokens with fewer K/V tokens (Nkv = H*W / kv_downsample**2),
+        which is what cuts the attention cost.
 
     Forward
     -------
     input x: (B, C, H, W)          -- post-SPM feature map
-    output (K, V): each (B, out_dim, H, W)
-        K and V always match the *input* spatial resolution (H, W), per
-        assumption A5, so they can be attended against Q's H*W tokens.
+    output (K, V): each (B, out_dim, ceil(H / kv_downsample), ceil(W / kv_downsample))
+        With the default kv_downsample=1 they match the *input* resolution
+        (H, W), per assumption A5. Q keeps H*W tokens either way; attention
+        accepts K/V with fewer tokens.
     """
 
     def __init__(
@@ -260,6 +267,7 @@ class CrossTokenIntegration(nn.Module):
         dim: int,
         out_dim: int | None = None,
         scales: Sequence[ScaleConfig] = DEFAULT_SCALES,
+        kv_downsample: int = 1,
     ) -> None:
         super().__init__()
         if dim <= 0:
@@ -269,6 +277,9 @@ class CrossTokenIntegration(nn.Module):
 
         self.dim = dim
         self.out_dim = out_dim if out_dim is not None else dim
+        if kv_downsample < 1:
+            raise ValueError(f"kv_downsample must be >= 1, got {kv_downsample}")
+        self.kv_downsample = kv_downsample
         self.scales: Tuple[ScaleConfig, ...] = tuple(scales)
         num_scales = len(self.scales)
 
@@ -342,7 +353,8 @@ class CrossTokenIntegration(nn.Module):
 
         Returns
         -------
-        K, V: each (B, self.out_dim, H, W), finite, matching input (H, W).
+        K, V: each (B, self.out_dim, ceil(H / kv_downsample), ceil(W / kv_downsample)), finite.
+        With kv_downsample=1 that is the input (H, W).
         """
         if x.dim() != 4:
             raise ValueError(f"CTI expects a 4D (B, C, H, W) tensor, got shape {tuple(x.shape)}")
@@ -350,7 +362,9 @@ class CrossTokenIntegration(nn.Module):
             raise ValueError(f"CTI configured for dim={self.dim}, got input channel dim {x.shape[1]}")
 
         batch, _, height, width = x.shape  # (B, C, H, W)
-        target_size = (height, width)
+        # "K": common resolution all branches are resized to (1 = input size, A5).
+        # ceil matches a stride-k SAME-padded branch, which then needs no resize.
+        target_size = (-(-height // self.kv_downsample), -(-width // self.kv_downsample))
 
         # Step 1 (Eq. 1): multi-scale K_i, V_i generation.
         # Each K_i, V_i: (B, C, H_i, W_i); H_i/W_i shrink with branch stride.
@@ -373,8 +387,8 @@ class CrossTokenIntegration(nn.Module):
         K = self._cross_scale_fuse(k_branches, alpha_k, target_size, self.k_refine, self.k_fuse)
         V = self._cross_scale_fuse(v_branches, alpha_v, target_size, self.v_refine, self.v_fuse)
 
-        assert K.shape == (batch, self.out_dim, height, width)
-        assert V.shape == (batch, self.out_dim, height, width)
+        assert K.shape == (batch, self.out_dim, *target_size)
+        assert V.shape == (batch, self.out_dim, *target_size)
         return K, V
 
 

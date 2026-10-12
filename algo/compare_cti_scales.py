@@ -1,6 +1,12 @@
-"""Compare CTI multi-scale configurations (number of scale levels S).
+"""Compare CTI "K" settings: the common K/V resolution before fusion.
 
-For each config the SPFI x4 model is built with the given CTI levels and:
+CTI keeps its 3 branches (3x3/s1, 5x5/s2, 7x7/s4). "K" is the size every
+branch is resized to (bilinear) before the 1x1 fusion, as a reduction factor
+of the input:  K2 -> H/2 x W/2  (32x32 for a 64x64 LR patch),
+               K4 -> H/4 x W/4  (16x16).
+Q keeps all H*W tokens; attention runs against the smaller K/V.
+
+For each config the SPFI x4 model is built with that K and:
   * params + forward GFLOPs on a [1,1,64,64] LR input (exact, torch FlopCounterMode)
   * latency of one forward pass (on the chosen device)
   * PSNR / SSIM on a fixed EMPS validation set, checked every --eval_every
@@ -29,29 +35,25 @@ import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
 
-from .cti import ScaleConfig
 from .model import build_spfi
 from .train import (EMBED_DIM, LAMBDA_SSIM, LR_PATCH, SCALE, EMPSDataset, charbonnier,
                     psnr, ssim_loss)
 
-# Level i uses kernel 2i+1 and stride 2**i: wider receptive field and coarser
-# resolution at every level, extending the CTI default (3/1, 5/2, 7/4).
-LEVELS = [ScaleConfig(3, 1), ScaleConfig(5, 2), ScaleConfig(7, 4), ScaleConfig(9, 8)]
-
+# name -> K (CTI kv_downsample). Everything else in the model is identical.
 CONFIGS = {
-    "K2": LEVELS[:2],
-    "K3 (default)": LEVELS[:3],
-    "K4": LEVELS[:4],
+    "K2": 2,
+    "K4": 4,
 }
 
 
-def describe(scales) -> str:
-    return ", ".join(f"k{s.kernel_size}/s{s.stride}" for s in scales)
+def describe(k: int) -> str:
+    side = -(-LR_PATCH // k)
+    return f"{side}x{side}"
 
 
-def build(scales, seed: int) -> torch.nn.Module:
+def build(k: int, seed: int) -> torch.nn.Module:
     torch.manual_seed(seed)
-    return build_spfi(scale=SCALE, embed_dim=EMBED_DIM, cti_scales=scales)
+    return build_spfi(scale=SCALE, embed_dim=EMBED_DIM, cti_kwargs={"kv_downsample": k})
 
 
 def cost(model: torch.nn.Module, device: torch.device) -> dict:
@@ -171,10 +173,10 @@ def main() -> None:
         print(f"bicubic PSNR on {args.n_val} val patches: {results['bicubic']['psnr']:.2f} dB")
 
     for name in args.configs:
-        scales = CONFIGS[name]
-        model = build(scales, args.seed).to(device)
-        r = {"levels": describe(scales), **cost(model, device)}
-        print(f"{name}: levels [{r['levels']}]  params={r['params']:,}  "
+        k = CONFIGS[name]
+        model = build(k, args.seed).to(device)
+        r = {"k": k, "kv_size": describe(k), **cost(model, device)}
+        print(f"{name}: K/V {r['kv_size']} (input {LR_PATCH}x{LR_PATCH})  params={r['params']:,}  "
               f"GFLOPs={r['gflops']:.2f}  fwd={r['latency_ms']:.0f} ms", flush=True)
         if args.iters > 0:
             r["sec_per_iter"], r["history"] = train(model, train_ds, args.iters, args.seed, args.lr,
@@ -191,7 +193,7 @@ def main() -> None:
         (args.out_dir / "results.json").write_text(json.dumps(
             {"iters": args.iters, "n_val": args.n_val, "seed": args.seed, "results": results}, indent=2))
 
-    print("\n| config | levels (kernel/stride) | params | GFLOPs | fwd ms "
+    print("\n| config | K/V size | params | GFLOPs | fwd ms "
           "| best PSNR | best SSIM | @iter | last PSNR | last SSIM |")
     print("|---|---|---|---|---|---|---|---|---|---|")
     for name in args.configs:
@@ -200,7 +202,7 @@ def main() -> None:
         def f(key: str, fmt: str) -> str:
             return format(r[key], fmt) if key in r else "-"
 
-        print(f"| {name} | {r['levels']} | {r['params']:,} | {r['gflops']:.2f} | {r['latency_ms']:.0f} "
+        print(f"| {name} | {r['kv_size']} | {r['params']:,} | {r['gflops']:.2f} | {r['latency_ms']:.0f} "
               f"| {f('psnr', '.3f')} | {f('ssim', '.4f')} | {f('best_iter', 'd')} "
               f"| {f('psnr_last', '.3f')} | {f('ssim_last', '.4f')} |")
     if "bicubic" in results:

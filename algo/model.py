@@ -127,8 +127,9 @@ class SPFI(nn.Module):
         Paper: 4 and 1.
     fen_depth : int
         PLACEHOLDER (FEN) depth; 0 = paper's single 3x3 conv.
-    cti_scales : sequence of cti.ScaleConfig, optional
-        CTI multi-scale levels used in every SCI layer. None = CTI's DEFAULT_SCALES.
+    cti_kwargs : dict, optional
+        Extra settings for every CTI block, e.g. ``{"kv_downsample": 2}``
+        (K/V resized to H/2 x W/2). None = CTI's defaults.
 
     ``forward(x, scale=None)`` -- see module docstring. ``[B, in_channels, H, W]``
     -> ``[B, in_channels, scale*H, scale*W]``.
@@ -146,7 +147,7 @@ class SPFI(nn.Module):
         drop: float = 0.0,
         attn_drop: float = 0.0,
         fen_depth: int = 0,
-        cti_scales=None,
+        cti_kwargs=None,
     ) -> None:
         super().__init__()
         if scale not in SUPPORTED_SCALES:
@@ -167,7 +168,7 @@ class SPFI(nn.Module):
             mlp_ratio=mlp_ratio,
             drop=drop,
             attn_drop=attn_drop,
-            cti_scales=cti_scales,
+            cti_kwargs=cti_kwargs,
         )
         self.body_conv = nn.Conv2d(embed_dim, embed_dim, kernel_size=3, padding=1)
         self.head = ReconstructionHead(embed_dim, scale, in_channels)
