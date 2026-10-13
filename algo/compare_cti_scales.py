@@ -145,7 +145,20 @@ def main() -> None:
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"device={device}")
 
+    # Keep results of configs not run this time (same iters / n_val / seed), so configs can be
+    # run one at a time into the same out_dir, e.g. after a disconnect.
     results = {}
+    results_path = args.out_dir / "results.json"
+    if results_path.is_file():
+        try:
+            old = json.loads(results_path.read_text())
+        except ValueError:
+            old = {}
+        if (old.get("iters"), old.get("n_val"), old.get("seed")) == (args.iters, args.n_val, args.seed):
+            results = {k: v for k, v in old.get("results", {}).items()
+                       if k != "bicubic" and k not in args.configs}
+            if results:
+                print(f"keeping earlier results from {results_path}: {', '.join(results)}")
     train_ds = val_set = None
     if args.iters > 0:
         image_dir = args.emps_dir / "images"
@@ -196,7 +209,7 @@ def main() -> None:
     print("\n| config | K/V size | params | GFLOPs | fwd ms "
           "| best PSNR | best SSIM | @iter | last PSNR | last SSIM |")
     print("|---|---|---|---|---|---|---|---|---|---|")
-    for name in args.configs:
+    for name in sorted(k for k in results if k != "bicubic"):
         r = results[name]
 
         def f(key: str, fmt: str) -> str:
