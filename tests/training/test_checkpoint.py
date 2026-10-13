@@ -23,6 +23,7 @@ def test_save_checkpoint_writes_hparams(tmp_path: Path) -> None:
         model=model,
         optimizer=torch.optim.SGD(model.parameters(), lr=LEARNING_RATE),
         best_val_loss=BEST_VAL_LOSS,
+        embed_dim=train.EMBED_DIM,
     )
 
     train.SPFITrainer._save_checkpoint(trainer, "best")

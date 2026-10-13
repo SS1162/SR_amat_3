@@ -37,7 +37,7 @@ import random
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, Iterable, List, Tuple
 
 import numpy as np
 import torch
@@ -197,6 +197,18 @@ class EMPSDataset:
 
 
 # ---------------------------------------------------------------------------
+# Data split
+# ---------------------------------------------------------------------------
+
+def split_files(stems: Iterable[str], seed: int) -> Tuple[List[str], List[str]]:
+    """Random 80/20 image-level split -> (train, val). Same stems + seed -> same split."""
+    files = sorted(stems)
+    random.Random(seed).shuffle(files)
+    n_train = int(0.8 * len(files))
+    return files[:n_train], files[n_train:]
+
+
+# ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
 
@@ -269,8 +281,15 @@ class SPFITrainer:
         weights: Path | None = None,
         run_dir: Path | None = None,
         log_every: int = 10,
+        embed_dim: int = EMBED_DIM,
+        split_seed: int | None = None,
     ) -> None:
-        """``run_dir``: write meta.json / metrics.jsonl / samples/ there for the UI (see run_logger.py)."""
+        """``run_dir``: write meta.json / metrics.jsonl / samples/ there for the UI (see run_logger.py).
+
+        ``embed_dim``: feature channels (model width). ``split_seed``: seed of the
+        train/val split; defaults to ``seed``. Set it to keep the same val images
+        across runs that use different training seeds.
+        """
         if init not in INIT_REGISTRY:
             raise ValueError(f"unknown init '{init}', expected one of {sorted(INIT_REGISTRY)}")
         self.ckpt_dir = ckpt_dir
@@ -290,14 +309,10 @@ class SPFITrainer:
 
         # ---- data split ----
         image_dir = emps_dir / "images"
-        all_files = sorted(
-            p.stem for p in image_dir.glob("*.png")
+        train_files, val_files = split_files(
+            (p.stem for p in image_dir.glob("*.png")),
+            seed if split_seed is None else split_seed,
         )
-        rng_split = random.Random(seed)
-        rng_split.shuffle(all_files)
-        n_train = int(0.8 * len(all_files))
-        train_files = all_files[:n_train]
-        val_files   = all_files[n_train:]
         print(f"[train] split: {len(train_files)} train / {len(val_files)} val images")
 
         self.train_ds = EMPSDataset(image_dir, train_files)
@@ -305,7 +320,8 @@ class SPFITrainer:
         self._train_rng = random.Random(seed + 1)
 
         # ---- model ----
-        self.model = build_spfi(scale=SCALE, embed_dim=EMBED_DIM).to(self.device)
+        self.embed_dim = embed_dim
+        self.model = build_spfi(scale=SCALE, embed_dim=embed_dim).to(self.device)
         INIT_REGISTRY[init](self, weights)
         self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
 
@@ -376,6 +392,7 @@ class SPFITrainer:
             "run_name": self.logger.run_dir.name,
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "scale": SCALE,
+            "embed_dim": self.embed_dim,
             "lr": self.optimizer.param_groups[0]["lr"],
             "wd": self.optimizer.param_groups[0]["weight_decay"],
             "patience": self.patience,
@@ -412,13 +429,14 @@ class SPFITrainer:
             "model_state": self.model.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "best_val_loss": self.best_val_loss,
-            "hparams": {"scale": SCALE, "embed_dim": EMBED_DIM},
+            "hparams": {"scale": SCALE, "embed_dim": self.embed_dim},
         }, path)
         print(f"[ckpt] saved → {path}")
 
     # ------------------------------------------------------------------
-    def train(self, stop_event: threading.Event | None = None) -> None:
-        """Run until early stopping, or until ``stop_event`` is set.
+    def train(self, stop_event: threading.Event | None = None, max_iters: int | None = None) -> None:
+        """Run until early stopping, until ``stop_event`` is set, or until
+        ``max_iters`` total iterations (exact, for fixed-budget comparisons).
 
         Calling ``train()`` again after a stop continues from the current
         iteration, model and optimizer state.
@@ -432,7 +450,7 @@ class SPFITrainer:
         print("[train] starting — Ctrl-C to stop early")
 
         try:
-            self._train_loop(stop_event)
+            self._train_loop(stop_event, max_iters)
         except KeyboardInterrupt:
             print(f"[train] interrupted at iteration {self.iteration}")
             self._log_event("stop")
@@ -441,10 +459,14 @@ class SPFITrainer:
         if self.logger is not None:
             self.logger.log_event(self.iteration, event)
 
-    def _train_loop(self, stop_event: threading.Event | None) -> None:
+    def _train_loop(self, stop_event: threading.Event | None, max_iters: int | None = None) -> None:
         while True:
             if stop_event is not None and stop_event.is_set():
                 print(f"[train] stopped at iteration {self.iteration}")
+                self._log_event("stop")
+                break
+            if max_iters is not None and self.iteration >= max_iters:
+                print(f"[train] reached max_iters={max_iters}")
                 self._log_event("stop")
                 break
             self.iteration += 1
@@ -528,6 +550,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--val_every", type=int,  default=CKPT_EVERY,
                    help="Validate (and checkpoint) every N iterations")
     p.add_argument("--seed",     type=int,   default=0)
+    p.add_argument("--split_seed", type=int, default=None,
+                   help="Seed of the train/val split (default: --seed)")
+    p.add_argument("--embed_dim", type=int,  default=EMBED_DIM,
+                   help="Feature channels (model width)")
+    p.add_argument("--max_iters", type=int,  default=None,
+                   help="Stop after exactly N iterations (default: early stopping only)")
     p.add_argument("--device",   type=str,   default=None,
                    help="'cuda', 'cpu', or None for auto-detect")
     p.add_argument("--init",     type=str,   default="scratch", choices=sorted(INIT_REGISTRY),
@@ -562,8 +590,10 @@ def main() -> None:
         weights   = args.weights,
         run_dir   = args.run_dir,
         log_every = args.log_every,
+        embed_dim = args.embed_dim,
+        split_seed = args.split_seed,
     )
-    trainer.train()
+    trainer.train(max_iters=args.max_iters)
 
 
 if __name__ == "__main__":
