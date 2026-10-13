@@ -1,0 +1,27 @@
+{
+  "_comment": "Width study: C8 vs C16. The only difference between the two configs must be embed_dim (feature channels = internal model capacity, not image resolution). Passed as keyword arguments to algo.model.build_spfi.",
+  "c08": {
+    "scale": 4,
+    "in_channels": 1,
+    "embed_dim": 8,
+    "n_blocks": 4,
+    "depth": 2,
+    "num_heads": 4,
+    "mlp_ratio": 1,
+    "drop": 0.0,
+    "attn_drop": 0.0,
+    "fen_depth": 0
+  },
+  "c16": {
+    "scale": 4,
+    "in_channels": 1,
+    "embed_dim": 16,
+    "n_blocks": 4,
+    "depth": 2,
+    "num_heads": 4,
+    "mlp_ratio": 1,
+    "drop": 0.0,
+    "attn_drop": 0.0,
+    "fen_depth": 0
+  }
+}
