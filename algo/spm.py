@@ -128,7 +128,9 @@ class SPM(nn.Module):
         # are kept inside self.dtcwt for the inverse.
         XL, XH = self.dtcwt(x)
 
-        XPL = self.tmm(XL)
+        # TMM disabled for investigation: XL goes to the inverse unchanged.
+        # XPL = self.tmm(XL)
+        XPL = XL
         XPH = self.emm(XH)
 
         # DTCWT inverse: real [B,C,H,W], same shape as x.
