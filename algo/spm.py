@@ -48,8 +48,8 @@ class SPM(nn.Module):
           inverse, so no information is dropped.
         - Band shapes actually produced (input [B,C,H,W]):
             XL: real    [B,C,H,W] at 1 level, [B,C,H/2^(L-1),W/2^(L-1)]
-                at L levels. TMM resizes its weight to match, so any
-                size works.
+                at L levels. TMM is one scalar per channel, so any size
+                works.
             XH: complex [B,C,6,H/2,W/2] (finest level, any L).
 
     The "+ alpha * X" residual connection (ASSUMPTION — the paper's
@@ -80,8 +80,6 @@ class SPM(nn.Module):
 
     Args:
         channels: C, number of channels of the input feature.
-        tmm_base_height: H0 for TMM's stored weight (see TMM docstring).
-        tmm_base_width: W0 for TMM's stored weight.
         emm_group_multiplier: passed through to EMM (default 1: Cb=C, Cd=6).
         emm_complex_mode: passed through to EMM ("independent" or
             "full_complex").
@@ -93,8 +91,6 @@ class SPM(nn.Module):
     def __init__(
         self,
         channels: int,
-        tmm_base_height: int = 64,
-        tmm_base_width: int = 64,
         emm_group_multiplier: int = 1,
         emm_complex_mode: str = "independent",
         alpha_init: float = 0.1,
@@ -102,7 +98,7 @@ class SPM(nn.Module):
     ) -> None:
         super().__init__()
         self.channels = channels
-        self.tmm = TMM(channels=channels, base_height=tmm_base_height, base_width=tmm_base_width)
+        self.tmm = TMM(channels=channels)
         self.emm = EMM(channels=channels, group_multiplier=emm_group_multiplier, complex_mode=emm_complex_mode)
         self.alpha = nn.Parameter(torch.tensor(float(alpha_init)))
         # Real DTCWT (issue #35) via the SPM-facing wrapper in dtcwt.py.
@@ -128,9 +124,7 @@ class SPM(nn.Module):
         # are kept inside self.dtcwt for the inverse.
         XL, XH = self.dtcwt(x)
 
-        # TMM disabled for investigation: XL goes to the inverse unchanged.
-        # XPL = self.tmm(XL)
-        XPL = XL
+        XPL = self.tmm(XL)
         XPH = self.emm(XH)
 
         # DTCWT inverse: real [B,C,H,W], same shape as x.

@@ -31,91 +31,44 @@ __all__ = ["TMM", "EMM"]
 class TMM(nn.Module):
     """Tensor Mixing Method (TMM) — low-frequency mixing path of SPM.
 
-    Paper equation:
-        XPL = W_theta (*) XL          (element-wise Hadamard product;
-                                       W_theta has the same shape as XL,
-                                       no summation over any axis)
+    Equation used here:
+        XPL[b, c, h, w] = w[c] * XL[b, c, h, w]
+
+    One learnable scalar per channel, shared across all spatial positions.
+    Each SPM owns its own TMM, so the total TMM parameter count of the model
+    is C * (number of SPMs), e.g. C * 8.
 
     ------------------------------------------------------------------
     PROVENANCE — read before changing this class.
 
-    The class body was written during Layer 6 integration; the *specification*
-    it implements is Shoshana Pinski's, taken verbatim from her design document
-    (`docs/SPFI_DESIGN_shoshana.md`, section 1) and her own test suite
-    (`tests/spfi/test_mixing.py`), both of which were delivered. Her
-    `mixing.py` shipped with `TMM` named in `__all__` and imported by `spm.py`
-    but never defined, so `spm.py` raised `ImportError` on import and her TMM
-    tests could not run. Every decision below is quoted from her design table,
-    except the weight init, which was later changed (see below).
+    The paper (and Shoshana Pinski's design document,
+    `docs/SPFI_DESIGN_shoshana.md`, section 1) specifies a full Hadamard
+    product, XPL = W_theta (*) XL, with W_theta the same shape as XL
+    ([C, H, W], stored at a base size [H0, W0] and resized at forward time).
+    That version was disabled during investigation and then replaced by the
+    task owner's decision with this per-channel scalar version: C parameters
+    instead of C * H0 * W0, and no resizing, so any input size works as is.
+    This is a deliberate deviation from the paper.
 
-        | Variable H,W        | stored at one fixed base size [H0,W0],
-        |                     | resized at forward time
-        | Upsampling (rare)   | bilinear
-        | Downsampling (common)| area
-        | Weight init         | random, N(0, init_std^2) (NOT Xavier)
-
-    Weight init was originally near-1.0 + small noise, so the module started
-    transparent (XPL ~= XL). It was changed to a fully random normal init by
-    the task owner's decision. Xavier is still not used: its
-    variance-preservation argument is built for operations that sum over an
-    axis, which an element-wise product does not do.
-
-    This must still be reviewed by Shoshana before Layer 6 is called done — it
-    is a reconstruction of her spec, not her own hand.
+    Weight init: all ones, so the module starts transparent (XPL == XL) and
+    learns per-channel scaling from there (task owner's decision; NOT Xavier,
+    whose variance-preservation argument is built for operations that sum
+    over an axis, which an element-wise product does not do).
     ------------------------------------------------------------------
-
-    Input size in practice: XL from the DTCWT is [B,C,H,W] at the SPM input
-    size with 1 level and halves per extra level, so with the SPM default
-    base size of 64x64 the weight is resized whenever the input or
-    `dtcwt_levels` differs from that.
 
     Args:
         channels: C, number of feature channels.
-        base_height: H0, stored weight height.
-        base_width: W0, stored weight width.
-        init_std: std of the random normal weight init (mean 0, default 1.0).
     """
 
-    def __init__(
-        self,
-        channels: int,
-        base_height: int,
-        base_width: int,
-        init_std: float = 1.0,
-    ) -> None:
+    def __init__(self, channels: int) -> None:
         super().__init__()
         if channels <= 0:
             raise ValueError(f"channels must be positive, got {channels}")
-        if base_height <= 0 or base_width <= 0:
-            raise ValueError(
-                f"base size must be positive, got ({base_height}, {base_width})"
-            )
 
         self.channels = channels
-        self.base_height = base_height
-        self.base_width = base_width
 
-        # Random normal init (deliberately not Xavier, see class docstring).
-        self.weight = nn.Parameter(
-            init_std * torch.randn(channels, base_height, base_width)
-        )
-
-    def _resized_weight(self, height: int, width: int) -> torch.Tensor:
-        """W_theta resized to the actual input size.
-
-        Exact base size returns the raw parameter with no interpolation call at
-        all, so TMM reduces to a plain Hadamard product in that case.
-        """
-        if height == self.base_height and width == self.base_width:
-            return self.weight
-        # "area" for downsampling (averages genuinely learned values, avoids
-        # aliasing); "bilinear" for the rare upsampling case.
-        shrinking = height <= self.base_height and width <= self.base_width
-        mode = "area" if shrinking else "bilinear"
-        kwargs = {} if mode == "area" else {"align_corners": False}
-        return F.interpolate(
-            self.weight.unsqueeze(0), size=(height, width), mode=mode, **kwargs
-        ).squeeze(0)
+        # One scalar per channel, initialised to 1.0 (see class docstring).
+        self.weight = nn.Parameter(torch.ones(channels))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Args: x, low-frequency band XL, real-valued ``[B, C, H, W]``.
@@ -126,12 +79,11 @@ class TMM(nn.Module):
             raise ValueError(
                 f"TMM expects a 4D input [B,C,H,W], got shape {tuple(x.shape)}"
             )
-        b, c, h, w = x.shape
-        if c != self.channels:
+        if x.shape[1] != self.channels:
             raise ValueError(
-                f"TMM was built for channels={self.channels}, got input with C={c}"
+                f"TMM was built for channels={self.channels}, got input with C={x.shape[1]}"
             )
-        return x * self._resized_weight(h, w).unsqueeze(0)
+        return x * self.weight.view(1, -1, 1, 1)
 
 
 class EMM(nn.Module):
