@@ -14,7 +14,7 @@ All arguments have defaults so the script runs with no flags if the EMPS
 directory is at the expected relative location.
 
 Architecture decisions (confirmed):
-  scale=4, embed_dim=48, LR patch=64×64, HR patch=256×256
+  scale=4, embed_dim=48, LR patch=64×64, HR patch=256×256, batch size=32
   Loss = Charbonnier + 0.5·(1−SSIM)
   Optimizer = AdamW
   Checkpoint every 250 iterations
@@ -22,7 +22,7 @@ Architecture decisions (confirmed):
 
 Data decisions (confirmed):
   Random 80/20 split at image level (no stratification)
-  Area-weighted image sampling: one crop per iteration
+  Area-weighted image sampling: one crop per batch element
   Degradation: Gaussian blur, sigma_min=0.2, sigma_max=4.0 (=1.0*scale),
                deterministic seed per (filename, scale), bicubic downscale
 """
@@ -62,6 +62,7 @@ HR_PATCH = LR_PATCH * SCALE          # 256
 SIGMA_MIN = 0.2
 SIGMA_MAX = 1.0 * SCALE              # 4.0
 LAMBDA_SSIM = 0.5
+BATCH_SIZE = 32
 CKPT_EVERY = 250
 
 
@@ -269,6 +270,7 @@ class SPFITrainer:
         weights: Path | None = None,
         run_dir: Path | None = None,
         log_every: int = 10,
+        batch_size: int = BATCH_SIZE,
     ) -> None:
         """``run_dir``: write meta.json / metrics.jsonl / samples/ there for the UI (see run_logger.py)."""
         if init not in INIT_REGISTRY:
@@ -277,6 +279,7 @@ class SPFITrainer:
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.val_every = val_every
         self.patience  = patience
+        self.batch_size = batch_size
 
         self.device = torch.device(
             device if device else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -379,6 +382,7 @@ class SPFITrainer:
             "lr": self.optimizer.param_groups[0]["lr"],
             "wd": self.optimizer.param_groups[0]["weight_decay"],
             "patience": self.patience,
+            "batch_size": self.batch_size,
             "val_every": CKPT_EVERY,   # the loop validates every CKPT_EVERY steps
             "n_train_images": self.n_train_images,
             "n_val_images": self.n_val_images,
@@ -449,9 +453,9 @@ class SPFITrainer:
                 break
             self.iteration += 1
 
-            lr_patch, hr_patch = self.train_ds.sample(self._train_rng)
-            lr_t = lr_patch.unsqueeze(0).to(self.device)
-            hr_t = hr_patch.unsqueeze(0).to(self.device)
+            pairs = [self.train_ds.sample(self._train_rng) for _ in range(self.batch_size)]
+            lr_t = torch.stack([lr for lr, _ in pairs]).to(self.device)   # [B,1,64,64]
+            hr_t = torch.stack([hr for _, hr in pairs]).to(self.device)   # [B,1,256,256]
 
             self.optimizer.zero_grad()
             sr = self.model(lr_t)
@@ -527,6 +531,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Early-stopping: checks without improvement before stopping")
     p.add_argument("--val_every", type=int,  default=CKPT_EVERY,
                    help="Validate (and checkpoint) every N iterations")
+    p.add_argument("--batch_size", type=int, default=BATCH_SIZE,
+                   help="Number of patches per training iteration")
     p.add_argument("--seed",     type=int,   default=0)
     p.add_argument("--device",   type=str,   default=None,
                    help="'cuda', 'cpu', or None for auto-detect")
@@ -562,6 +568,7 @@ def main() -> None:
         weights   = args.weights,
         run_dir   = args.run_dir,
         log_every = args.log_every,
+        batch_size = args.batch_size,
     )
     trainer.train()
 
