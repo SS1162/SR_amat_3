@@ -20,6 +20,16 @@ Architecture decisions (confirmed):
   Checkpoint every 250 iterations
   Early stopping on dev-set validation loss (Charbonnier + 0.5·(1−SSIM))
 
+Training recipe options (all off by default = the original recipe above):
+  batch_size     patches per update (default 1)
+  lr_schedule    "constant" (default) or "cosine": linear warm-up for
+                 warmup_iters, then cosine decay to lr·min_lr_ratio at total_iters
+  ema_decay      keep an exponential moving average of the weights; validation
+                 and checkpoints ("model_state") use the averaged weights
+  augment        random flips / 90° rotations of each HR crop
+  cache_images   keep the decoded images in memory instead of re-reading the PNG
+                 for every patch (same patches, faster)
+
 Data decisions (confirmed):
   Random 80/20 split at image level (no stratification)
   Area-weighted image sampling: one crop per iteration
@@ -30,6 +40,7 @@ Data decisions (confirmed):
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import math
 import os
@@ -148,10 +159,12 @@ class EMPSDataset:
       3. Degrading the crop to produce the LR patch.
     """
 
-    def __init__(self, image_dir: Path, filenames: List[str], scale: int = SCALE) -> None:
+    def __init__(self, image_dir: Path, filenames: List[str], scale: int = SCALE,
+                 cache: bool = False) -> None:
         self.image_dir = image_dir
         self.filenames = filenames
         self.scale = scale
+        self._cache: dict[str, np.ndarray] | None = {} if cache else None   # raw arrays, as on disk
 
         # Pre-compute image sizes for area-weighted sampling
         self._sizes: List[Tuple[int, int]] = []
@@ -165,13 +178,22 @@ class EMPSDataset:
     # ------------------------------------------------------------------
     def _load_gray_tensor(self, filename: str) -> torch.Tensor:
         """Load PNG as [1, H, W] float32 in [0, 1]."""
-        path = self.image_dir / f"{filename}.png"
-        img = normalize_image(load_image(path))  # same loading + normalization as inference
+        if self._cache is None:
+            raw = load_image(self.image_dir / f"{filename}.png")
+        else:
+            if filename not in self._cache:
+                self._cache[filename] = load_image(self.image_dir / f"{filename}.png")
+            raw = self._cache[filename]
+        img = normalize_image(raw)              # same loading + normalization as inference
         return to_tensor(img)                   # [1, H, W], float32
 
     # ------------------------------------------------------------------
-    def sample(self, rng: random.Random) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return one (lr_patch [1,64,64], hr_patch [1,256,256]) pair."""
+    def sample(self, rng: random.Random, augment: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return one (lr_patch [1,64,64], hr_patch [1,256,256]) pair.
+
+        ``augment``: apply one of the 8 flips / 90° rotations to the HR crop before
+        degrading it (the rng is only consumed when augment is on).
+        """
         idx = rng.choices(range(len(self.filenames)), weights=self._weights)[0]
         fn  = self.filenames[idx]
         hr  = self._load_gray_tensor(fn)        # [1, H, W]
@@ -191,9 +213,45 @@ class EMPSDataset:
         top  = rng.randint(0, H - HR_PATCH)
         left = rng.randint(0, W - HR_PATCH)
         hr_patch = hr[:, top:top + HR_PATCH, left:left + HR_PATCH]
+        if augment:
+            hr_patch = dihedral(hr_patch, rng.randrange(8))
 
         lr_patch = degrade(hr_patch, filename=fn, scale=self.scale)
         return lr_patch, hr_patch
+
+
+def dihedral(img: torch.Tensor, k: int) -> torch.Tensor:
+    """One of the 8 flips / 90° rotations of a [..., H, W] tensor (k = 0 is the identity)."""
+    if k >= 4:
+        img = img.flip(-1)
+    return torch.rot90(img, k % 4, dims=(-2, -1)).contiguous()
+
+
+# ---------------------------------------------------------------------------
+# Learning-rate schedule
+# ---------------------------------------------------------------------------
+
+LR_SCHEDULES = ("constant", "cosine")
+
+
+def lr_at(iteration: int, base_lr: float, schedule: str = "constant", warmup_iters: int = 0,
+          total_iters: int | None = None, min_lr_ratio: float = 0.01) -> float:
+    """Learning rate for update number ``iteration`` (1-based).
+
+    A pure function of the iteration, so a resumed run gets the same rates.
+    """
+    if warmup_iters > 0 and iteration <= warmup_iters:
+        return base_lr * iteration / warmup_iters
+    if schedule == "constant":
+        return base_lr
+    if schedule == "cosine":
+        if total_iters is None:
+            raise ValueError("the cosine schedule needs total_iters")
+        span = max(total_iters - warmup_iters, 1)
+        progress = min(max(iteration - warmup_iters, 0) / span, 1.0)
+        floor = base_lr * min_lr_ratio
+        return floor + (base_lr - floor) * 0.5 * (1 + math.cos(math.pi * progress))
+    raise ValueError(f"unknown lr schedule '{schedule}', expected one of {LR_SCHEDULES}")
 
 
 # ---------------------------------------------------------------------------
@@ -283,15 +341,32 @@ class SPFITrainer:
         log_every: int = 10,
         embed_dim: int = EMBED_DIM,
         split_seed: int | None = None,
+        batch_size: int = 1,
+        lr_schedule: str = "constant",
+        warmup_iters: int = 0,
+        total_iters: int | None = None,
+        min_lr_ratio: float = 0.01,
+        ema_decay: float | None = None,
+        augment: bool = False,
+        cache_images: bool = False,
     ) -> None:
         """``run_dir``: write meta.json / metrics.jsonl / samples/ there for the UI (see run_logger.py).
 
         ``embed_dim``: feature channels (model width). ``split_seed``: seed of the
         train/val split; defaults to ``seed``. Set it to keep the same val images
         across runs that use different training seeds.
+
+        Recipe options (see the module docstring): ``batch_size``, ``lr_schedule`` /
+        ``warmup_iters`` / ``total_iters`` / ``min_lr_ratio``, ``ema_decay``,
+        ``augment``, ``cache_images``. The defaults reproduce the original recipe.
         """
         if init not in INIT_REGISTRY:
             raise ValueError(f"unknown init '{init}', expected one of {sorted(INIT_REGISTRY)}")
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
+        if ema_decay is not None and not 0.0 < ema_decay < 1.0:
+            raise ValueError("ema_decay must be between 0 and 1")
+        lr_at(1, lr, lr_schedule, warmup_iters, total_iters, min_lr_ratio)   # validates the schedule
         self.ckpt_dir = ckpt_dir
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.val_every = val_every
@@ -315,8 +390,8 @@ class SPFITrainer:
         )
         print(f"[train] split: {len(train_files)} train / {len(val_files)} val images")
 
-        self.train_ds = EMPSDataset(image_dir, train_files)
-        self.val_ds   = EMPSDataset(image_dir, val_files)
+        self.train_ds = EMPSDataset(image_dir, train_files, cache=cache_images)
+        self.val_ds   = EMPSDataset(image_dir, val_files, cache=cache_images)
         self._train_rng = random.Random(seed + 1)
 
         # ---- model ----
@@ -324,6 +399,17 @@ class SPFITrainer:
         self.model = build_spfi(scale=SCALE, embed_dim=embed_dim).to(self.device)
         INIT_REGISTRY[init](self, weights)
         self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
+
+        # ---- recipe ----
+        self.base_lr = lr
+        self.batch_size = batch_size
+        self.lr_schedule, self.warmup_iters = lr_schedule, warmup_iters
+        self.total_iters, self.min_lr_ratio = total_iters, min_lr_ratio
+        self.augment = augment
+        self.ema_decay = ema_decay
+        self.ema_model: nn.Module | None = None
+        if ema_decay is not None:
+            self.ema_model = copy.deepcopy(self.model).requires_grad_(False)
 
         # ---- state ----
         self.iteration     = 0
@@ -338,9 +424,26 @@ class SPFITrainer:
         self._samples: list[tuple[torch.Tensor, torch.Tensor]] = []   # fixed (lr, hr) val patches
 
     # ------------------------------------------------------------------
+    @property
+    def eval_model(self) -> nn.Module:
+        """The weights that are validated and exported: the EMA copy when enabled."""
+        return self.ema_model if self.ema_model is not None else self.model
+
+    @torch.no_grad()
+    def _update_ema(self) -> None:
+        # Short warm-up of the decay (as in common EMA implementations) so the average
+        # is not dominated by the random initial weights early in training.
+        decay = min(self.ema_decay, (1 + self.iteration) / (10 + self.iteration))
+        for e, p in zip(self.ema_model.parameters(), self.model.parameters()):
+            e.lerp_(p, 1.0 - decay)
+        for e, b in zip(self.ema_model.buffers(), self.model.buffers()):
+            e.copy_(b)
+
+    # ------------------------------------------------------------------
     def _validate(self, n_samples: int = 64) -> tuple[float, float, float]:
         """Returns (val_loss, val_psnr, val_ssim). val_loss drives early stopping."""
-        self.model.eval()
+        model = self.eval_model
+        model.eval()
         total_loss_val = 0.0
         total_psnr_val = 0.0
         total_ssim_val = 0.0
@@ -350,11 +453,11 @@ class SPFITrainer:
                 lr, hr = self.val_ds.sample(rng)
                 lr = lr.unsqueeze(0).to(self.device)
                 hr = hr.unsqueeze(0).to(self.device)
-                sr = self.model(lr)
+                sr = model(lr)
                 total_loss_val += total_loss(sr, hr).item()
                 total_psnr_val += psnr(sr, hr)
                 total_ssim_val += 1.0 - ssim_loss(sr, hr).item()
-        self.model.train()
+        model.train()
         return total_loss_val / n_samples, total_psnr_val / n_samples, total_ssim_val / n_samples
 
     # ------------------------------------------------------------------
@@ -393,8 +496,15 @@ class SPFITrainer:
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "scale": SCALE,
             "embed_dim": self.embed_dim,
-            "lr": self.optimizer.param_groups[0]["lr"],
+            "lr": self.base_lr,
             "wd": self.optimizer.param_groups[0]["weight_decay"],
+            "batch_size": self.batch_size,
+            "lr_schedule": self.lr_schedule,
+            "warmup_iters": self.warmup_iters,
+            "total_iters": self.total_iters,
+            "min_lr_ratio": self.min_lr_ratio,
+            "ema_decay": self.ema_decay,
+            "augment": self.augment,
             "patience": self.patience,
             "val_every": CKPT_EVERY,   # the loop validates every CKPT_EVERY steps
             "n_train_images": self.n_train_images,
@@ -414,23 +524,27 @@ class SPFITrainer:
 
     def _save_samples(self, step: int) -> None:
         """Model output for the fixed samples at this step (eval mode, then back to train)."""
-        self.model.eval()
+        model = self.eval_model
+        model.eval()
         with torch.no_grad():
             for k, (lr, _) in enumerate(self._samples, start=1):
-                sr = self.model(lr.unsqueeze(0).to(self.device))[0]
+                sr = model(lr.unsqueeze(0).to(self.device))[0]
                 self.logger.save_png(f"sample_{k}_iter{step:07d}.png", sr)
-        self.model.train()
+        model.train()
 
     # ------------------------------------------------------------------
     def _save_checkpoint(self, tag: str) -> None:
         path = self.ckpt_dir / f"spfi_x4_{tag}.pt"
-        torch.save({
+        state = {
             "iteration": self.iteration,
-            "model_state": self.model.state_dict(),
+            "model_state": self.eval_model.state_dict(),   # what inference loads (EMA weights if enabled)
             "optimizer_state": self.optimizer.state_dict(),
             "best_val_loss": self.best_val_loss,
             "hparams": {"scale": SCALE, "embed_dim": self.embed_dim},
-        }, path)
+        }
+        if self.ema_model is not None:
+            state["train_model_state"] = self.model.state_dict()   # raw weights, to continue training
+        torch.save(state, path)
         print(f"[ckpt] saved → {path}")
 
     # ------------------------------------------------------------------
@@ -471,9 +585,14 @@ class SPFITrainer:
                 break
             self.iteration += 1
 
-            lr_patch, hr_patch = self.train_ds.sample(self._train_rng)
-            lr_t = lr_patch.unsqueeze(0).to(self.device)
-            hr_t = hr_patch.unsqueeze(0).to(self.device)
+            pairs = [self.train_ds.sample(self._train_rng, self.augment) for _ in range(self.batch_size)]
+            lr_t = torch.stack([lr for lr, _ in pairs]).to(self.device)
+            hr_t = torch.stack([hr for _, hr in pairs]).to(self.device)
+
+            step_lr = lr_at(self.iteration, self.base_lr, self.lr_schedule, self.warmup_iters,
+                            self.total_iters, self.min_lr_ratio)
+            for group in self.optimizer.param_groups:
+                group["lr"] = step_lr
 
             self.optimizer.zero_grad()
             sr = self.model(lr_t)
@@ -482,6 +601,8 @@ class SPFITrainer:
             loss = c + LAMBDA_SSIM * s          # == total_loss(sr, hr_t), split for logging
             loss.backward()
             self.optimizer.step()
+            if self.ema_model is not None:
+                self._update_ema()
             self.last_loss = loss.detach()
             if self.logger is not None:
                 self.logger.log_train(self.iteration, loss, c, s, self.optimizer.param_groups[0]["lr"])
@@ -556,6 +677,15 @@ def _parse_args() -> argparse.Namespace:
                    help="Feature channels (model width)")
     p.add_argument("--max_iters", type=int,  default=None,
                    help="Stop after exactly N iterations (default: early stopping only)")
+    p.add_argument("--batch_size", type=int, default=1, help="Patches per update")
+    p.add_argument("--lr_schedule", type=str, default="constant", choices=LR_SCHEDULES,
+                   help="'cosine' decays from --lr to --lr x --min_lr_ratio at --max_iters")
+    p.add_argument("--warmup_iters", type=int, default=0, help="Linear LR warm-up iterations")
+    p.add_argument("--min_lr_ratio", type=float, default=0.01, help="Final LR / --lr for 'cosine'")
+    p.add_argument("--ema_decay", type=float, default=None,
+                   help="Average the weights (e.g. 0.999); validation and checkpoints use the average")
+    p.add_argument("--augment", action="store_true", help="Random flips / 90° rotations of the patches")
+    p.add_argument("--cache_images", action="store_true", help="Keep the decoded images in memory")
     p.add_argument("--device",   type=str,   default=None,
                    help="'cuda', 'cpu', or None for auto-detect")
     p.add_argument("--init",     type=str,   default="scratch", choices=sorted(INIT_REGISTRY),
@@ -572,6 +702,8 @@ def _parse_args() -> argparse.Namespace:
         p.error("--emps_dir is required (no default dataset location for this checkout)")
     if args.init == "finetune" and args.weights is None:
         p.error("--init finetune needs --weights <checkpoint.pt>")
+    if args.lr_schedule == "cosine" and args.max_iters is None:
+        p.error("--lr_schedule cosine needs --max_iters (the decay ends there)")
     return args
 
 
@@ -592,6 +724,14 @@ def main() -> None:
         log_every = args.log_every,
         embed_dim = args.embed_dim,
         split_seed = args.split_seed,
+        batch_size = args.batch_size,
+        lr_schedule = args.lr_schedule,
+        warmup_iters = args.warmup_iters,
+        total_iters = args.max_iters,
+        min_lr_ratio = args.min_lr_ratio,
+        ema_decay = args.ema_decay,
+        augment = args.augment,
+        cache_images = args.cache_images,
     )
     trainer.train(max_iters=args.max_iters)
 

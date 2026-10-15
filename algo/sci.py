@@ -33,6 +33,7 @@ there is no identity-stub fallback (see the import block below for why).
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 # Layer 6 integration is complete: SPM (#36, Shoshana) and CTI (#37, Tehila) are
@@ -56,6 +57,8 @@ __all__ = [
 # Paper hyper-parameters (methods section, hyper-parameter table).
 DEFAULT_NUM_HEADS = 4
 DEFAULT_MLP_RATIO = 1
+# Attention head size is zero-padded to a multiple of this for the fused GPU kernel.
+ATTN_HEAD_ALIGN = 8
 
 
 class LayerNorm2d(nn.Module):
@@ -155,11 +158,21 @@ class SCIAttention(nn.Module):
         k = self._to_tokens(self.to_k(k))      # [B, heads, Nkv, head_dim]
         v = self._to_tokens(self.to_v(v))      # [B, heads, Nkv, head_dim]
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale  # [B, heads, Nq, Nkv]
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        out = attn @ v                                  # [B, heads, Nq, head_dim]
+        # softmax(Q Kᵀ · scale) V with dropout on the weights -- the same computation as
+        # forming the [B, heads, Nq, Nkv] matrix explicitly, but PyTorch's fused kernel
+        # never stores that matrix (64x64 patch: 4096² weights per head), so memory
+        # stays linear in the number of tokens and batches of patches fit on the GPU.
+        # The memory-efficient CUDA kernel needs head_dim % 8 == 0 (else PyTorch falls
+        # back to the explicit matrix), so small heads are zero-padded: zeros add
+        # nothing to Q·Kᵀ, and the padded output columns (from zero V) are cut off.
+        pad = -self.head_dim % ATTN_HEAD_ALIGN
+        if pad:
+            q, k, v = (F.pad(t, (0, pad)) for t in (q, k, v))
+        out = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+            scale=self.scale,
+        )[..., :self.head_dim]                          # [B, heads, Nq, head_dim]
         out = out.permute(0, 1, 3, 2).reshape(b, c, hq, wq)
         out = self.proj(out)
         return self.proj_drop(out)
