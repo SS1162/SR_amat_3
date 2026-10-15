@@ -93,8 +93,12 @@ def evaluate(model, val_set, device: torch.device) -> tuple[float, float]:
 
 
 def train(model, train_ds, iters: int, seed: int, lr: float, log_every: int, name: str,
-          device: torch.device, val_set=None, eval_every: int = 0) -> tuple[float, list[dict]]:
-    """Train in place. Returns (sec_per_iter, history of {"iter", "psnr", "ssim"} checks)."""
+          device: torch.device, val_set=None, eval_every: int = 0,
+          best_path: Path | None = None) -> tuple[float, list[dict]]:
+    """Train in place. Returns (sec_per_iter, history of {"iter", "psnr", "ssim"} checks).
+
+    If best_path is given, the weights of the check with the highest PSNR are saved there.
+    """
     history: list[dict] = []
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
     rng = random.Random(seed + 1)
@@ -113,9 +117,36 @@ def train(model, train_ds, iters: int, seed: int, lr: float, log_every: int, nam
             print(f"  [{name}] iter {it}/{iters}  loss={loss.item():.4f}  {el / it:.2f}s/it", flush=True)
         if val_set is not None and eval_every > 0 and (it % eval_every == 0 or it == iters):
             p, s = evaluate(model, val_set, device)
+            if best_path is not None and all(p > h["psnr"] for h in history):
+                torch.save(model.state_dict(), best_path)
             history.append({"iter": it, "psnr": p, "ssim": s})
             print(f"  [{name}] eval @ {it}: PSNR={p:.3f} dB  SSIM={s:.4f}", flush=True)
     return (time.perf_counter() - t0) / max(iters, 1), history
+
+
+def load_data(emps_dir: Path, seed: int, n_val: int, all_images: bool = False):
+    """Training set and the fixed validation patches, the same for every config of one seed.
+
+    Returns (train_ds, val_set), val_set being a list of (lr [1,64,64], hr [1,256,256]) pairs.
+    """
+    image_dir = emps_dir / "images"
+    files = sorted(p.stem for p in image_dir.glob("*.png"))
+    train_csv = emps_dir / "train.csv"
+    if train_csv.is_file() and not all_images:
+        # Same protocol as notebooks/train_colab.ipynb: only EMPS's train split is used
+        # (split 80/20 into train / validation here); test.csv images are never touched.
+        train_ids = {line.split(",")[0].strip()
+                     for line in train_csv.read_text().splitlines() if line.strip()}
+        files = [f for f in files if f in train_ids]
+        print(f"using EMPS train split only: {len(files)} images (test.csv held out)")
+    else:
+        print(f"WARNING: using all {len(files)} images in {image_dir} (no train.csv split)")
+    random.Random(seed).shuffle(files)
+    n_train = int(0.8 * len(files))
+    train_ds = EMPSDataset(image_dir, files[:n_train])
+    val_ds = EMPSDataset(image_dir, files[n_train:])
+    vrng = random.Random(42)
+    return train_ds, [val_ds.sample(vrng) for _ in range(n_val)]
 
 
 def _sync(device: torch.device) -> None:
@@ -161,24 +192,7 @@ def main() -> None:
                 print(f"keeping earlier results from {results_path}: {', '.join(results)}")
     train_ds = val_set = None
     if args.iters > 0:
-        image_dir = args.emps_dir / "images"
-        files = sorted(p.stem for p in image_dir.glob("*.png"))
-        train_csv = args.emps_dir / "train.csv"
-        if train_csv.is_file() and not args.all_images:
-            # Same protocol as notebooks/train_colab.ipynb: only EMPS's train split is used
-            # (split 80/20 into train / validation here); test.csv images are never touched.
-            train_ids = {line.split(",")[0].strip()
-                         for line in train_csv.read_text().splitlines() if line.strip()}
-            files = [f for f in files if f in train_ids]
-            print(f"using EMPS train split only: {len(files)} images (test.csv held out)")
-        else:
-            print(f"WARNING: using all {len(files)} images in {image_dir} (no train.csv split)")
-        random.Random(args.seed).shuffle(files)
-        n_train = int(0.8 * len(files))
-        train_ds = EMPSDataset(image_dir, files[:n_train])
-        val_ds = EMPSDataset(image_dir, files[n_train:])
-        vrng = random.Random(42)
-        val_set = [val_ds.sample(vrng) for _ in range(args.n_val)]
+        train_ds, val_set = load_data(args.emps_dir, args.seed, args.n_val, args.all_images)
         bic = [psnr(F.interpolate(lr.unsqueeze(0), scale_factor=SCALE, mode="bicubic",
                                   align_corners=False).clamp(0, 1), hr.unsqueeze(0))
                for lr, hr in val_set]
@@ -194,7 +208,8 @@ def main() -> None:
         if args.iters > 0:
             r["sec_per_iter"], r["history"] = train(model, train_ds, args.iters, args.seed, args.lr,
                                                     args.log_every, name, device,
-                                                    val_set=val_set, eval_every=args.eval_every or args.iters)
+                                                    val_set=val_set, eval_every=args.eval_every or args.iters,
+                                                    best_path=args.out_dir / f"{name}_best.pt")
             best = max(r["history"], key=lambda h: h["psnr"])
             last = r["history"][-1]
             r["psnr"], r["ssim"], r["best_iter"] = best["psnr"], best["ssim"], best["iter"]
