@@ -2,9 +2,10 @@ from pathlib import Path
 import subprocess
 import sys
 
-from dash import Input, Output
+from dash import Input, Output, State, no_update
 
-from .config import RUNS_DIR
+from .config import LOGIN_EMAIL, LOGIN_PASSWORD, RUNS_DIR
+from .layout import build_login_layout, build_workspace_layout
 
 REPO_ROOT = RUNS_DIR.parent
 
@@ -54,6 +55,47 @@ def output_directory_feedback(path_value):
 
 
 def register_app_callbacks(app):
+    @app.callback(Output("root-content", "children"), Input("auth-state", "data"))
+    def render_root_content(auth_state):
+        if auth_state and auth_state.get("authenticated"):
+            return build_workspace_layout()
+        return build_login_layout()
+
+    @app.callback(
+        Output("auth-state", "data"),
+        Output("login-feedback", "children"),
+        Output("login-feedback", "className"),
+        Input("login-submit", "n_clicks"),
+        State("login-email", "value"),
+        State("login-password", "value"),
+        prevent_initial_call=True,
+    )
+    def login_user(_, email, password):
+        if not email or not password:
+            return no_update, "Email and password are required.", "text-danger small mt-2"
+
+        if not LOGIN_EMAIL or not LOGIN_PASSWORD:
+            return (
+                no_update,
+                "Authentication is not configured. Set APP_LOGIN_EMAIL and APP_LOGIN_PASSWORD.",
+                "text-danger small mt-2",
+            )
+
+        if email.strip().lower() == LOGIN_EMAIL.strip().lower() and password == LOGIN_PASSWORD:
+            return {"authenticated": True}, "", "d-none"
+
+        return no_update, "Invalid email or password.", "text-danger small mt-2"
+
+    @app.callback(
+        Output("auth-state", "data", allow_duplicate=True),
+        Input("logout-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def logout_user(n_clicks):
+        if not n_clicks:
+            return no_update
+        return {"authenticated": False}
+
     @app.callback(
         Output("app-shell", "className"),
         Input("theme-toggle", "value"),

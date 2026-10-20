@@ -32,6 +32,7 @@ The demo callbacks are intentionally cosmetic and do **not** implement the real 
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
+# edit .env and set APP_LOGIN_EMAIL / APP_LOGIN_PASSWORD
 python app.py
 ```
 

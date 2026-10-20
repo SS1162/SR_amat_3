@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 APP_NAME = "SPFI Studio"
 
@@ -10,3 +11,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DASH_CACHE_DIR = REPO_ROOT / ".cache" / "dash"
 # One sub-folder per inference job: input/ (saved uploads) and output/ (SR results)
 INFERENCE_RUNS_DIR = REPO_ROOT / "tmp" / "inference"
+
+LOGIN_EMAIL = os.getenv("APP_LOGIN_EMAIL", "")
+LOGIN_PASSWORD = os.getenv("APP_LOGIN_PASSWORD", "")

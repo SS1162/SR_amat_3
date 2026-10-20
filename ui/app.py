@@ -8,9 +8,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import socket
+from dotenv import load_dotenv
 
 from dash import Dash, DiskcacheManager
 import dash_bootstrap_components as dbc
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from spfi_ui.callbacks import register_app_callbacks
 from spfi_ui.config import APP_NAME

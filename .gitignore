@@ -15,3 +15,7 @@ checkpoints/
 # Inference job folders and the Dash background-callback cache
 tmp/
 .cache/
+
+# Local environment files
+.env
+ui/.env

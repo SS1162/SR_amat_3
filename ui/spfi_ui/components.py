@@ -91,6 +91,7 @@ def topbar():
                         className="theme-toggle",
                     ),
                     dbc.Button("Documentation", color="light", outline=True, className="ghost-btn"),
+                    dbc.Button("Logout", id="logout-btn", color="danger", outline=True, className="ghost-btn"),
                 ],
             ),
         ],
