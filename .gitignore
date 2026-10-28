@@ -19,3 +19,6 @@ tmp/
 # Local environment files
 .env
 ui/.env
+
+# Eval viewer cache (SR previews + metrics, rebuilt on demand)
+eval_viewer/eval_cache/
